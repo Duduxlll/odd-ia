@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   BadgePercent,
   Copy,
@@ -25,6 +26,7 @@ import type {
 import { formatOdd, formatPercent } from "@/lib/utils";
 
 export function DashboardShell({ initialSnapshot }: { initialSnapshot: DashboardSnapshot }) {
+  const router = useRouter();
   const initialFilters =
     initialSnapshot.latestRun?.filters ?? initialSnapshot.defaultFilters;
   const [filters, setFilters] = useState<AnalysisFilters>(initialFilters);
@@ -54,6 +56,7 @@ export function DashboardShell({ initialSnapshot }: { initialSnapshot: Dashboard
       setRun(payload.run);
       setFilters(payload.run.filters);
       setSystemNote(payload.run.systemNote);
+      router.refresh();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error ? caughtError.message : "Falha ao executar a análise.",
@@ -76,6 +79,7 @@ export function DashboardShell({ initialSnapshot }: { initialSnapshot: Dashboard
       setRun(null);
       setFilters(initialSnapshot.defaultFilters);
       setSystemNote(null);
+      router.refresh();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error ? caughtError.message : "Falha ao limpar a análise.",
