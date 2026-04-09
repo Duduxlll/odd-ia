@@ -14,6 +14,7 @@ import {
   getLatestAnalysisRun,
   getRunningAnalysisJob,
   saveDraftFilters,
+  touchAnalysisJob,
 } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -117,7 +118,10 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
-        await runFootballAnalysis(filters, session.username);
+        await touchAnalysisJob(session.username, job.id, "Inicializando scan em segundo plano.");
+        await runFootballAnalysis(filters, session.username, {
+          onProgress: (message) => touchAnalysisJob(session.username, job.id, message),
+        });
         await completeAnalysisJob(session.username, job.id);
       } catch (error) {
         const message =

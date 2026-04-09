@@ -47,6 +47,14 @@ export function formatOdd(value: number) {
   return value.toFixed(2);
 }
 
+export function formatDateTimeInSaoPaulo(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(value));
+}
+
 export function slugify(value: string) {
   return value
     .normalize("NFD")

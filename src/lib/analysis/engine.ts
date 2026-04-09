@@ -2693,24 +2693,42 @@ async function refreshHistoricalPickTracking() {
 export async function runFootballAnalysis(
   rawFilters?: Partial<AnalysisFilters>,
   username = "default",
+  options?: {
+    onProgress?: (message: string) => Promise<void> | void;
+  },
 ) {
+  const reportProgress = async (message: string) => {
+    await options?.onProgress?.(message);
+  };
+  const isHostedRuntime = Boolean(process.env.VERCEL);
+
+  await reportProgress("Atualizando o histórico de picks e validando o radar.");
   await refreshHistoricalPickTracking().catch(() => null);
 
   const filters = normalizeFilters(rawFilters);
   const dates = getScanDates(filters.scanDate, filters.horizonHours);
+  await reportProgress("Buscando fixtures e montando a janela elegível.");
   const fixturesByDate = await Promise.all(dates.map((date) => fetchFixturesByDate(date)));
   const fixtures = fixturesByDate.flat();
   const eligibleFixtures = filterEligibleFixtures(fixtures, filters);
-  const fixtureBudget = Math.min(
+  const baseFixtureBudget = Math.min(
     eligibleFixtures.length,
     env.API_FOOTBALL_FREE_PLAN_MODE
       ? Math.max(1, env.API_FOOTBALL_MAX_FIXTURES_PER_SCAN)
       : Math.max(env.API_FOOTBALL_MAX_FIXTURES_PER_SCAN, filters.pickCount * 3),
   );
+  const fixtureBudget = isHostedRuntime
+    ? Math.min(baseFixtureBudget, Math.max(8, Math.min(14, filters.pickCount + 4)))
+    : baseFixtureBudget;
   const fixturesForOdds = selectFixturesForOdds(eligibleFixtures, filters, fixtureBudget);
+  await reportProgress(`Consultando odds em ${fixturesForOdds.length} fixtures priorizadas.`);
   const oddsByFixture = await mapLimit(
     fixturesForOdds,
-    env.API_FOOTBALL_FREE_PLAN_MODE ? 1 : env.API_FOOTBALL_ODDS_CONCURRENCY,
+    env.API_FOOTBALL_FREE_PLAN_MODE
+      ? 1
+      : isHostedRuntime
+        ? Math.min(4, env.API_FOOTBALL_ODDS_CONCURRENCY)
+        : env.API_FOOTBALL_ODDS_CONCURRENCY,
     async (fixture) => {
       const response = await fetchOddsByFixture(
         fixture.fixture.id,
@@ -2733,17 +2751,25 @@ export async function runFootballAnalysis(
   const bookmakerScopeLabel = env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER
     ? env.API_FOOTBALL_PRIMARY_BOOKMAKER_NAME
     : "mercado agregado";
-  const seedVolume = env.API_FOOTBALL_FREE_PLAN_MODE
+  const baseSeedVolume = env.API_FOOTBALL_FREE_PLAN_MODE
     ? Math.min(Math.max(filters.pickCount * 2, 12), 28)
     : Math.min(
         Math.max(filters.pickCount * 4, 32),
         Math.max(32, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
       );
+  const seedVolume = isHostedRuntime
+    ? Math.min(baseSeedVolume, Math.max(18, Math.min(28, filters.pickCount * 2)))
+    : baseSeedVolume;
   const seeded = rawCandidates.slice(0, seedVolume);
   const getFixtureContext = createFixtureContextLoader(filters);
+  await reportProgress(`Aprofundando contexto em ${seeded.length} mercados candidatos.`);
   const enriched = await mapLimit(
     seeded,
-    env.API_FOOTBALL_FREE_PLAN_MODE ? 1 : env.API_FOOTBALL_CONTEXT_CONCURRENCY,
+    env.API_FOOTBALL_FREE_PLAN_MODE
+      ? 1
+      : isHostedRuntime
+        ? Math.min(3, env.API_FOOTBALL_CONTEXT_CONCURRENCY)
+        : env.API_FOOTBALL_CONTEXT_CONCURRENCY,
     (candidate) => enrichCandidate(candidate, getFixtureContext),
   );
   let picks = enriched
@@ -2759,6 +2785,7 @@ export async function runFootballAnalysis(
     : rawCandidates.length
       ? `Foram encontrados mercados com odds, mas nenhum passou no corte final de valor dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
       : `Foram monitorados ${fixturesForOdds.length} fixtures com odds nesta rodada, mas nenhum mercado elegível entrou no filtro atual.`;
+  await reportProgress("Pontuando valor, risco e shortlist final.");
   const aiReview = await reviewPicksWithOpenAI(picks, filters).catch(() => null);
 
   if (aiReview) {
@@ -2804,6 +2831,7 @@ export async function runFootballAnalysis(
     run.systemNote = `${run.systemNote} Odds focadas exclusivamente em ${env.API_FOOTBALL_PRIMARY_BOOKMAKER_NAME}.`;
   }
 
+  await reportProgress("Persistindo a rodada e fechando o scan.");
   await saveAnalysisRun(
     run,
     username,

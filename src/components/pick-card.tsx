@@ -15,7 +15,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { AnalysisPick } from "@/lib/types";
-import { cn, formatOdd, formatPercent } from "@/lib/utils";
+import { cn, formatDateTimeInSaoPaulo, formatOdd, formatPercent } from "@/lib/utils";
 
 function categoryAccent(category: AnalysisPick["marketCategory"]) {
   if (category === "goals") return { color: "#22D3EE", bg: "rgba(34,211,238,0.12)", border: "rgba(34,211,238,0.25)" };
@@ -44,13 +44,6 @@ function confidenceGlow(value: number) {
   if (value >= 68) return "rgba(34,211,238,0.45)";
   if (value >= 56) return "rgba(251,191,36,0.40)";
   return "rgba(251,113,133,0.40)";
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
 
 function formatSigned(value: number | null) {
@@ -267,7 +260,7 @@ export function PickCard({
               {pick.selection}
             </h3>
             <p className="mt-1 text-xs text-slate-500">
-              {pick.fixtureLabel} · {formatDateTime(pick.fixtureDate)}
+              {pick.fixtureLabel} · {formatDateTimeInSaoPaulo(pick.fixtureDate)}
             </p>
             <p className="mt-3 max-w-lg text-sm leading-6 text-slate-300">{pick.summary}</p>
           </div>

@@ -26,6 +26,8 @@ const PICKS_TABLE = "radar_analysis_picks";
 const SNAPSHOTS_TABLE = "radar_market_snapshots";
 const STATE_TABLE = "radar_dashboard_state";
 const JOBS_TABLE = "radar_analysis_jobs";
+const VERCEL_ANALYSIS_STALE_MS = 8 * 60 * 1000;
+const LOCAL_ANALYSIS_STALE_MS = 30 * 60 * 1000;
 
 let schemaPromise: Promise<void> | null = null;
 
@@ -134,6 +136,83 @@ function mapJobRow(row: Record<string, unknown>): AnalysisJob {
     message: String(row.message),
     error: row.error_text ? String(row.error_text) : null,
   };
+}
+
+function getAnalysisStaleWindowMs() {
+  return process.env.VERCEL ? VERCEL_ANALYSIS_STALE_MS : LOCAL_ANALYSIS_STALE_MS;
+}
+
+function isJobStale(updatedAt: string) {
+  const updatedAtMs = new Date(updatedAt).getTime();
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+
+  return Date.now() - updatedAtMs > getAnalysisStaleWindowMs();
+}
+
+async function clearActiveJobPointer(username: string, jobId?: string) {
+  if (jobId) {
+    await db.execute({
+      sql: `
+        UPDATE ${STATE_TABLE}
+        SET active_job_id = NULL
+        WHERE username = ? AND active_job_id = ?
+      `,
+      args: [username, jobId],
+    });
+    return;
+  }
+
+  await db.execute({
+    sql: `
+      UPDATE ${STATE_TABLE}
+      SET active_job_id = NULL
+      WHERE username = ?
+    `,
+    args: [username],
+  });
+}
+
+async function normalizeActiveJob(username: string, job: AnalysisJob) {
+  if (job.status === "completed") {
+    await clearActiveJobPointer(username, job.id);
+    return null;
+  }
+
+  if (job.status !== "running" || !isJobStale(job.updatedAt)) {
+    return job;
+  }
+
+  const runResult = await db.execute({
+    sql: `
+      SELECT id
+      FROM ${RUNS_TABLE}
+      WHERE username = ? AND created_at >= ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    args: [username, job.createdAt],
+  });
+
+  if (runResult.rows.length) {
+    await completeAnalysisJob(username, job.id);
+    return null;
+  }
+
+  const timeoutMessage = process.env.VERCEL
+    ? "A análise excedeu o tempo limite da Vercel e foi encerrada. Reduza ligas, janela ou volume de picks e rode novamente."
+    : "A análise ficou sem atualizar por tempo demais e foi encerrada para evitar travamento.";
+
+  await failAnalysisJob(username, job.id, timeoutMessage);
+
+  return {
+    ...job,
+    status: "failed",
+    updatedAt: new Date().toISOString(),
+    message: timeoutMessage,
+    error: timeoutMessage,
+  } satisfies AnalysisJob;
 }
 
 export async function ensureSchema() {
@@ -475,7 +554,12 @@ export async function getDashboardState(username: string) {
     });
 
     if (jobResult.rows.length) {
-      activeJob = mapJobRow(jobResult.rows[0] as Record<string, unknown>);
+      activeJob = await normalizeActiveJob(
+        username,
+        mapJobRow(jobResult.rows[0] as Record<string, unknown>),
+      );
+    } else {
+      await clearActiveJobPointer(username);
     }
   }
 
@@ -550,7 +634,29 @@ export async function getRunningAnalysisJob(username: string) {
     return null;
   }
 
-  return mapJobRow(result.rows[0] as Record<string, unknown>);
+  const activeJob = await normalizeActiveJob(
+    username,
+    mapJobRow(result.rows[0] as Record<string, unknown>),
+  );
+
+  return activeJob?.status === "running" ? activeJob : null;
+}
+
+export async function touchAnalysisJob(username: string, jobId: string, message?: string) {
+  await ensureSchema();
+
+  const timestamp = new Date().toISOString();
+
+  await db.execute({
+    sql: `
+      UPDATE ${JOBS_TABLE}
+      SET
+        message = COALESCE(?, message),
+        updated_at = ?
+      WHERE id = ? AND username = ? AND status = 'running'
+    `,
+    args: [message ?? null, timestamp, jobId, username],
+  });
 }
 
 export async function completeAnalysisJob(username: string, jobId: string) {

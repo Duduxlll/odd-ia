@@ -5,7 +5,7 @@ import { Brain, Database, Layers3, Radar, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
 import type { AnalysisJob, AnalysisRun, ConfigStatus } from "@/lib/types";
-import { formatOdd } from "@/lib/utils";
+import { formatDateTimeInSaoPaulo, formatOdd } from "@/lib/utils";
 
 function Metric({
   label,
@@ -104,13 +104,6 @@ function statusLabel(enabled: boolean) {
   return enabled ? "ativo" : "pendente";
 }
 
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
 export function HeroPanel({
   run,
   activeJob,
@@ -200,7 +193,7 @@ export function HeroPanel({
               {activeJob?.status === "running" ? (
                 <ScopePill label="scan em andamento" />
               ) : run ? (
-                <ScopePill label={`atualizado ${formatDateTime(run.createdAt)}`} />
+                <ScopePill label={`atualizado ${formatDateTimeInSaoPaulo(run.createdAt)}`} />
               ) : null}
             </div>
 

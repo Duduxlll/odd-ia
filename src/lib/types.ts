@@ -210,7 +210,7 @@ export interface AnalysisRun {
 
 export interface AnalysisJob {
   id: string;
-  status: "running" | "failed";
+  status: "running" | "failed" | "completed";
   createdAt: string;
   updatedAt: string;
   filters: AnalysisFilters;

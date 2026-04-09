@@ -25,7 +25,7 @@ import type {
   DashboardSnapshot,
   MarketCategoryId,
 } from "@/lib/types";
-import { formatOdd, formatPercent } from "@/lib/utils";
+import { formatDateTimeInSaoPaulo, formatOdd, formatPercent } from "@/lib/utils";
 
 export function DashboardShell({
   initialSnapshot,
@@ -311,9 +311,9 @@ export function DashboardShell({
             title="Resumo executivo"
             subtitle={
               activeJob?.status === "running"
-                ? `Scan iniciado em ${formatDateTime(activeJob.createdAt)}`
+                ? `Scan iniciado em ${formatDateTimeInSaoPaulo(activeJob.createdAt)}`
                 : run
-                ? `Última execução em ${formatDateTime(run.createdAt)}`
+                ? `Última execução em ${formatDateTimeInSaoPaulo(run.createdAt)}`
                 : "Pronto para a primeira rodada"
             }
             icon={Gauge}
@@ -773,13 +773,6 @@ function EmptyFeatureState({
       <p className="mt-2 text-xs leading-5 text-slate-500">{description}</p>
     </div>
   );
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
 
 function formatSigned(value: number) {
