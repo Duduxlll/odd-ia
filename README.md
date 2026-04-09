@@ -29,6 +29,7 @@ Painel pessoal para analisar futebol com odds reais, contexto competitivo, score
 ```env
 AUTH_USERNAME=...
 AUTH_PASSWORD=...
+AUTH_USERS_JSON=
 AUTH_SECRET=...
 OPENAI_API_KEY=...
 API_FOOTBALL_KEY=...
@@ -58,7 +59,12 @@ Abra `http://localhost:3000`.
 ## Observações
 
 - Se o `Turso` não estiver configurado, o app usa um banco local `libSQL` em arquivo para não travar o desenvolvimento.
-- O acesso ao painel agora depende de `AUTH_USERNAME`, `AUTH_PASSWORD` e um `AUTH_SECRET` longo para assinar o cookie de sessão.
+- O acesso ao painel depende de `AUTH_SECRET` e de pelo menos um login configurado. Você pode usar `AUTH_USERNAME` + `AUTH_PASSWORD` para 1 usuário, ou `AUTH_USERS_JSON` para vários usuários.
+- Exemplo de múltiplos logins:
+
+```env
+AUTH_USERS_JSON=[{"username":"dudu","password":"senha-forte-1"},{"username":"ana","password":"senha-forte-2"}]
+```
 - Se a chave da `OpenAI` não estiver configurada, o sistema continua com o motor heurístico e marca isso no fluxo.
 - A análise atual está focada em `futebol`, com base estruturada para crescer em mercados e profundidade.
 - O preset atual já está ajustado para plano `Pro`, com scan mais profundo, shortlist maior e contexto completo.

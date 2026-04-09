@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 
 import { env } from "@/lib/env";
 
@@ -18,8 +19,20 @@ export type AuthSession = {
   username: string;
 };
 
+const authUsersSchema = z.array(
+  z.object({
+    username: z.string().trim().min(1),
+    password: z.string().min(1),
+  }),
+);
+
+type AuthUser = {
+  username: string;
+  password: string;
+};
+
 export function isAuthConfigured() {
-  return Boolean(env.AUTH_USERNAME && env.AUTH_PASSWORD && env.AUTH_SECRET);
+  return Boolean(env.AUTH_SECRET && getAuthUsers().length);
 }
 
 export function getAuthCookieOptions() {
@@ -34,11 +47,25 @@ export function getAuthCookieOptions() {
 }
 
 export function validateCredentials(username: string, password: string) {
-  if (!isAuthConfigured() || !env.AUTH_USERNAME || !env.AUTH_PASSWORD) {
-    return false;
+  return resolveAuthenticatedUsername(username, password) !== null;
+}
+
+export function resolveAuthenticatedUsername(username: string, password: string) {
+  const normalizedUsername = username.trim();
+  if (!isAuthConfigured() || !normalizedUsername) {
+    return null;
   }
 
-  return safeCompare(username.trim(), env.AUTH_USERNAME) && safeCompare(password, env.AUTH_PASSWORD);
+  const matchedUser = getAuthUsers().find(
+    (user) =>
+      safeCompare(normalizedUsername, user.username) && safeCompare(password, user.password),
+  );
+
+  return matchedUser?.username ?? null;
+}
+
+export function getConfiguredAuthUsernames() {
+  return getAuthUsers().map((user) => user.username);
 }
 
 export function createSessionToken(username: string) {
@@ -100,6 +127,37 @@ export function getSessionFromToken(token?: string | null): AuthSession | null {
 
 export function getSessionFromRequest(request: NextRequest) {
   return getSessionFromToken(request.cookies.get(AUTH_COOKIE_NAME)?.value);
+}
+
+function getAuthUsers(): AuthUser[] {
+  const users = new Map<string, AuthUser>();
+
+  if (env.AUTH_USERNAME && env.AUTH_PASSWORD) {
+    users.set(env.AUTH_USERNAME.trim().toLowerCase(), {
+      username: env.AUTH_USERNAME.trim(),
+      password: env.AUTH_PASSWORD,
+    });
+  }
+
+  if (env.AUTH_USERS_JSON?.trim()) {
+    try {
+      const parsed = authUsersSchema.parse(JSON.parse(env.AUTH_USERS_JSON));
+      for (const user of parsed) {
+        users.set(user.username.trim().toLowerCase(), {
+          username: user.username.trim(),
+          password: user.password,
+        });
+      }
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? `AUTH_USERS_JSON inválido: ${error.message}`
+          : "AUTH_USERS_JSON inválido.",
+      );
+    }
+  }
+
+  return Array.from(users.values());
 }
 
 function encodePayload(payload: SessionPayload) {

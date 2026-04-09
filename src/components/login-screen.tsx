@@ -150,14 +150,14 @@ export function LoginScreen() {
               Entrar no painel
             </h2>
             <p className="mt-3 text-sm leading-7 text-slate-600">
-              Use o usuário e a senha definidos nas variáveis de ambiente do projeto.
+              Use um dos logins definidos nas variáveis de ambiente do projeto.
             </p>
           </div>
 
           {configError ? (
             <InlineAlert
               tone="amber"
-              message="Autenticação ainda não configurada neste ambiente. Defina AUTH_USERNAME, AUTH_PASSWORD e AUTH_SECRET."
+              message="Autenticação ainda não configurada neste ambiente. Defina AUTH_SECRET e pelo menos um login em AUTH_USERNAME/AUTH_PASSWORD ou AUTH_USERS_JSON."
             />
           ) : null}
           {error ? <InlineAlert tone="rose" message={error} /> : null}

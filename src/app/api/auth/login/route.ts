@@ -7,9 +7,8 @@ import {
   createSessionToken,
   getAuthCookieOptions,
   isAuthConfigured,
-  validateCredentials,
+  resolveAuthenticatedUsername,
 } from "@/lib/auth";
-import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 
@@ -23,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "Autenticação não configurada. Defina AUTH_USERNAME, AUTH_PASSWORD e AUTH_SECRET.",
+          "Autenticação não configurada. Defina AUTH_SECRET e pelo menos um login em AUTH_USERNAME/AUTH_PASSWORD ou AUTH_USERS_JSON.",
       },
       { status: 503 },
     );
@@ -32,15 +31,19 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const credentials = loginSchema.parse(body);
+    const matchedUsername = resolveAuthenticatedUsername(
+      credentials.username,
+      credentials.password,
+    );
 
-    if (!validateCredentials(credentials.username, credentials.password)) {
+    if (!matchedUsername) {
       return NextResponse.json({ error: "Usuário ou senha inválidos." }, { status: 401 });
     }
 
     const cookieStore = await cookies();
     cookieStore.set(
       AUTH_COOKIE_NAME,
-      createSessionToken(env.AUTH_USERNAME ?? credentials.username.trim()),
+      createSessionToken(matchedUsername),
       getAuthCookieOptions(),
     );
 

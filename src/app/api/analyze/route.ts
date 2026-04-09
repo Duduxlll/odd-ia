@@ -38,7 +38,7 @@ async function requireAuthenticatedSession() {
   if (!isAuthConfigured()) {
     throw new AuthError(
       503,
-      "Autenticação não configurada. Defina AUTH_USERNAME, AUTH_PASSWORD e AUTH_SECRET.",
+      "Autenticação não configurada. Defina AUTH_SECRET e pelo menos um login em AUTH_USERNAME/AUTH_PASSWORD ou AUTH_USERS_JSON.",
     );
   }
 
