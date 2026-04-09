@@ -61,3 +61,4 @@ Abra `http://localhost:3000`.
 - O radar pode operar travado em uma casa específica, mas o preset atual já vem em `multi-casa` para não limitar a cobertura das odds.
 - Se você voltar para o plano grátis, troque para `API_FOOTBALL_FREE_PLAN_MODE=true`, reduza `API_FOOTBALL_MAX_FIXTURES_PER_SCAN` e mantenha `API_FOOTBALL_ODDS_MAX_PAGE=3`.
 # odd-ia
+# odd-ia
