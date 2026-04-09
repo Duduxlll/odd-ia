@@ -2,6 +2,8 @@ import { createClient } from "@libsql/client";
 
 import { DEFAULT_FILTERS } from "@/lib/constants";
 import type {
+  AnalysisFilters,
+  AnalysisJob,
   AnalysisPick,
   AnalysisRun,
   ClvSnapshot,
@@ -22,6 +24,8 @@ const db = createClient({
 const RUNS_TABLE = "radar_analysis_runs";
 const PICKS_TABLE = "radar_analysis_picks";
 const SNAPSHOTS_TABLE = "radar_market_snapshots";
+const STATE_TABLE = "radar_dashboard_state";
+const JOBS_TABLE = "radar_analysis_jobs";
 
 let schemaPromise: Promise<void> | null = null;
 
@@ -120,12 +124,25 @@ function mapPickRow(row: Record<string, unknown>): AnalysisPick {
   };
 }
 
+function mapJobRow(row: Record<string, unknown>): AnalysisJob {
+  return {
+    id: String(row.id),
+    status: String(row.status) as AnalysisJob["status"],
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+    filters: parseJson<AnalysisFilters>(row.filters_json, DEFAULT_FILTERS),
+    message: String(row.message),
+    error: row.error_text ? String(row.error_text) : null,
+  };
+}
+
 export async function ensureSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
       await db.execute(`
         CREATE TABLE IF NOT EXISTS ${RUNS_TABLE} (
           id TEXT PRIMARY KEY,
+          username TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL,
           filters_json TEXT NOT NULL,
           fixtures_scanned INTEGER NOT NULL,
@@ -140,6 +157,7 @@ export async function ensureSchema() {
         CREATE TABLE IF NOT EXISTS ${PICKS_TABLE} (
           id TEXT PRIMARY KEY,
           run_id TEXT NOT NULL,
+          username TEXT NOT NULL DEFAULT '',
           candidate_id TEXT NOT NULL,
           fixture_id INTEGER NOT NULL,
           fixture_label TEXT NOT NULL,
@@ -203,6 +221,29 @@ export async function ensureSchema() {
         )
       `);
 
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ${STATE_TABLE} (
+          username TEXT PRIMARY KEY,
+          draft_filters_json TEXT NOT NULL,
+          active_job_id TEXT
+        )
+      `);
+
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ${JOBS_TABLE} (
+          id TEXT PRIMARY KEY,
+          username TEXT NOT NULL,
+          status TEXT NOT NULL,
+          filters_json TEXT NOT NULL,
+          message TEXT NOT NULL,
+          error_text TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `);
+
+      await ensureColumnExists(RUNS_TABLE, "username", "TEXT", "");
+      await ensureColumnExists(PICKS_TABLE, "username", "TEXT", "");
       await ensureColumnExists(PICKS_TABLE, "analysis_sections_json", "TEXT", "[]");
       await ensureColumnExists(PICKS_TABLE, "xg_context_json", "TEXT", "null");
       await ensureColumnExists(PICKS_TABLE, "line_movement_json", "TEXT", "null");
@@ -222,6 +263,7 @@ export async function ensureSchema() {
 
 export async function saveAnalysisRun(
   run: AnalysisRun,
+  username: string,
   marketSnapshots: Array<{
     candidateId: string;
     fixtureId: number;
@@ -239,6 +281,7 @@ export async function saveAnalysisRun(
     sql: `
       INSERT INTO ${RUNS_TABLE} (
         id,
+        username,
         created_at,
         filters_json,
         fixtures_scanned,
@@ -246,10 +289,11 @@ export async function saveAnalysisRun(
         executive_summary,
         system_note,
         accumulator_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     args: [
       run.id,
+      username,
       run.createdAt,
       JSON.stringify(run.filters),
       run.fixturesScanned,
@@ -266,6 +310,7 @@ export async function saveAnalysisRun(
         INSERT INTO ${PICKS_TABLE} (
           id,
           run_id,
+          username,
           candidate_id,
           fixture_id,
           fixture_label,
@@ -308,11 +353,12 @@ export async function saveAnalysisRun(
           ai_verdict,
           ai_confidence_label,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
         `${run.id}:${pick.candidateId}`,
         run.id,
+        username,
         pick.candidateId,
         pick.fixtureId,
         pick.fixtureLabel,
@@ -393,11 +439,193 @@ export async function saveAnalysisRun(
   }
 }
 
-export async function getLatestAnalysisRun() {
+export async function saveDraftFilters(username: string, filters: AnalysisFilters) {
+  await ensureSchema();
+
+  await db.execute({
+    sql: `
+      INSERT INTO ${STATE_TABLE} (username, draft_filters_json, active_job_id)
+      VALUES (?, ?, NULL)
+      ON CONFLICT(username) DO UPDATE SET
+        draft_filters_json = excluded.draft_filters_json
+    `,
+    args: [username, JSON.stringify(filters)],
+  });
+}
+
+export async function getDashboardState(username: string) {
+  await ensureSchema();
+
+  const stateResult = await db.execute({
+    sql: `SELECT draft_filters_json, active_job_id FROM ${STATE_TABLE} WHERE username = ? LIMIT 1`,
+    args: [username],
+  });
+
+  const stateRow = stateResult.rows[0] as Record<string, unknown> | undefined;
+  const draftFilters = stateRow
+    ? parseJson<AnalysisFilters>(stateRow.draft_filters_json, DEFAULT_FILTERS)
+    : DEFAULT_FILTERS;
+  const activeJobId = stateRow?.active_job_id ? String(stateRow.active_job_id) : null;
+
+  let activeJob: AnalysisJob | null = null;
+  if (activeJobId) {
+    const jobResult = await db.execute({
+      sql: `SELECT * FROM ${JOBS_TABLE} WHERE id = ? AND username = ? LIMIT 1`,
+      args: [activeJobId, username],
+    });
+
+    if (jobResult.rows.length) {
+      activeJob = mapJobRow(jobResult.rows[0] as Record<string, unknown>);
+    }
+  }
+
+  return {
+    draftFilters,
+    activeJob,
+  };
+}
+
+export async function createAnalysisJob(username: string, filters: AnalysisFilters) {
+  await ensureSchema();
+
+  const id = crypto.randomUUID();
+  const timestamp = new Date().toISOString();
+
+  await db.execute({
+    sql: `
+      INSERT INTO ${JOBS_TABLE} (
+        id,
+        username,
+        status,
+        filters_json,
+        message,
+        error_text,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    args: [
+      id,
+      username,
+      "running",
+      JSON.stringify(filters),
+      "Scan em andamento. O radar continua processando mesmo se a página recarregar.",
+      null,
+      timestamp,
+      timestamp,
+    ],
+  });
+
+  await db.execute({
+    sql: `
+      INSERT INTO ${STATE_TABLE} (username, draft_filters_json, active_job_id)
+      VALUES (?, ?, ?)
+      ON CONFLICT(username) DO UPDATE SET
+        draft_filters_json = excluded.draft_filters_json,
+        active_job_id = excluded.active_job_id
+    `,
+    args: [username, JSON.stringify(filters), id],
+  });
+
+  return {
+    id,
+    status: "running",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    filters,
+    message: "Scan em andamento. O radar continua processando mesmo se a página recarregar.",
+    error: null,
+  } satisfies AnalysisJob;
+}
+
+export async function getRunningAnalysisJob(username: string) {
+  await ensureSchema();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM ${JOBS_TABLE} WHERE username = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1`,
+    args: [username],
+  });
+
+  if (!result.rows.length) {
+    return null;
+  }
+
+  return mapJobRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function completeAnalysisJob(username: string, jobId: string) {
+  await ensureSchema();
+
+  const timestamp = new Date().toISOString();
+
+  await db.execute({
+    sql: `
+      UPDATE ${JOBS_TABLE}
+      SET status = 'completed', message = ?, error_text = NULL, updated_at = ?
+      WHERE id = ? AND username = ?
+    `,
+    args: ["Scan concluído com sucesso.", timestamp, jobId, username],
+  });
+
+  await db.execute({
+    sql: `
+      UPDATE ${STATE_TABLE}
+      SET active_job_id = NULL
+      WHERE username = ? AND active_job_id = ?
+    `,
+    args: [username, jobId],
+  });
+}
+
+export async function failAnalysisJob(username: string, jobId: string, message: string) {
+  await ensureSchema();
+
+  const timestamp = new Date().toISOString();
+
+  await db.execute({
+    sql: `
+      UPDATE ${JOBS_TABLE}
+      SET status = 'failed', message = ?, error_text = ?, updated_at = ?
+      WHERE id = ? AND username = ?
+    `,
+    args: [message, message, timestamp, jobId, username],
+  });
+
+  await db.execute({
+    sql: `
+      UPDATE ${STATE_TABLE}
+      SET active_job_id = ?
+      WHERE username = ?
+    `,
+    args: [jobId, username],
+  });
+}
+
+export async function clearFailedAnalysisJob(username: string) {
+  await ensureSchema();
+
+  await db.execute({
+    sql: `
+      UPDATE ${STATE_TABLE}
+      SET active_job_id = NULL
+      WHERE username = ?
+    `,
+    args: [username],
+  });
+}
+
+export async function getLatestAnalysisRun(username: string) {
   await ensureSchema();
 
   const latestRunResult = await db.execute({
-    sql: `SELECT * FROM ${RUNS_TABLE} ORDER BY created_at DESC LIMIT 1`,
+    sql: `
+      SELECT *
+      FROM ${RUNS_TABLE}
+      WHERE username = ? OR username = ''
+      ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END, created_at DESC
+      LIMIT 1
+    `,
+    args: [username, username],
   });
 
   if (!latestRunResult.rows.length) {
@@ -642,14 +870,16 @@ function accumulateBucket(
   buckets.set(key, existing);
 }
 
-export async function getPerformanceSummary() {
+export async function getPerformanceSummary(username: string) {
   await ensureSchema();
 
   const rows = await db.execute({
     sql: `
       SELECT league_name, market_category, ai_confidence_label, tracking_json, clv_json
       FROM ${PICKS_TABLE}
+      WHERE username = ? OR username = ''
     `,
+    args: [username],
   });
 
   let totalTracked = 0;
@@ -752,10 +982,29 @@ export async function getPerformanceSummary() {
   } satisfies PerformanceSummary;
 }
 
-export async function clearAnalysisHistory() {
+export async function clearAnalysisHistory(username: string) {
   await ensureSchema();
 
-  await db.execute(`DELETE FROM ${SNAPSHOTS_TABLE}`);
-  await db.execute(`DELETE FROM ${PICKS_TABLE}`);
-  await db.execute(`DELETE FROM ${RUNS_TABLE}`);
+  await db.execute({
+    sql: `DELETE FROM ${PICKS_TABLE} WHERE username = ? OR username = ''`,
+    args: [username],
+  });
+  await db.execute({
+    sql: `DELETE FROM ${RUNS_TABLE} WHERE username = ? OR username = ''`,
+    args: [username],
+  });
+  await db.execute({
+    sql: `
+      INSERT INTO ${STATE_TABLE} (username, draft_filters_json, active_job_id)
+      VALUES (?, ?, NULL)
+      ON CONFLICT(username) DO UPDATE SET
+        draft_filters_json = excluded.draft_filters_json,
+        active_job_id = NULL
+    `,
+    args: [username, JSON.stringify(DEFAULT_FILTERS)],
+  });
+  await db.execute({
+    sql: `DELETE FROM ${JOBS_TABLE} WHERE username = ?`,
+    args: [username],
+  });
 }

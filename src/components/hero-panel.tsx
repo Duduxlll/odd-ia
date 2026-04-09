@@ -4,7 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { Brain, Database, Layers3, Radar, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
-import type { AnalysisRun, ConfigStatus } from "@/lib/types";
+import type { AnalysisJob, AnalysisRun, ConfigStatus } from "@/lib/types";
 import { formatOdd } from "@/lib/utils";
 
 function Metric({
@@ -113,12 +113,14 @@ function formatDateTime(value: string) {
 
 export function HeroPanel({
   run,
+  activeJob,
   config,
 }: {
   run: AnalysisRun | null;
+  activeJob: AnalysisJob | null;
   config: ConfigStatus;
 }) {
-  const filters = run?.filters;
+  const filters = activeJob?.filters ?? run?.filters;
   const leagues = filters?.leagueIds.length ?? 0;
   const markets = filters?.marketCategories.length ?? 0;
   const band = filters ? `${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}` : "—";
@@ -195,7 +197,9 @@ export function HeroPanel({
               <ScopePill label={`${leagues} ligas ativas`} />
               <ScopePill label={`${markets} famílias`} />
               <ScopePill label={`faixa ${band}`} />
-              {run ? (
+              {activeJob?.status === "running" ? (
+                <ScopePill label="scan em andamento" />
+              ) : run ? (
                 <ScopePill label={`atualizado ${formatDateTime(run.createdAt)}`} />
               ) : null}
             </div>
@@ -229,7 +233,9 @@ export function HeroPanel({
                 Resumo do radar
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                {run?.executiveSummary ??
+                {activeJob?.status === "running"
+                  ? "O scan atual segue em segundo plano com os filtros já travados. Recarregar a página não derruba mais a execução."
+                  : run?.executiveSummary ??
                   "Escolha o recorte e rode a análise. O painel vai preencher resumo, picks, múltipla e leitura de risco sem espalhar tudo em cards gigantes."}
               </p>
             </div>
@@ -255,7 +261,7 @@ export function HeroPanel({
                   Estado do motor
                 </p>
                 <h2 className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-white">
-                  Pronto para escanear
+                  {activeJob?.status === "running" ? "Escaneando agora" : "Pronto para escanear"}
                 </h2>
               </div>
               <div

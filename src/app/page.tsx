@@ -15,7 +15,7 @@ export default async function Home() {
     redirect("/login");
   }
 
-  const snapshot = await getDashboardSnapshot();
+  const snapshot = await getDashboardSnapshot(session.username);
 
   return <DashboardShell initialSnapshot={snapshot} currentUsername={session.username} />;
 }

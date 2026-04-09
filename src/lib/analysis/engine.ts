@@ -2690,7 +2690,10 @@ async function refreshHistoricalPickTracking() {
   }
 }
 
-export async function runFootballAnalysis(rawFilters?: Partial<AnalysisFilters>) {
+export async function runFootballAnalysis(
+  rawFilters?: Partial<AnalysisFilters>,
+  username = "default",
+) {
   await refreshHistoricalPickTracking().catch(() => null);
 
   const filters = normalizeFilters(rawFilters);
@@ -2803,6 +2806,7 @@ export async function runFootballAnalysis(rawFilters?: Partial<AnalysisFilters>)
 
   await saveAnalysisRun(
     run,
+    username,
     rawCandidates.map((candidate) => ({
       candidateId: candidate.candidateId,
       fixtureId: candidate.fixtureId,

@@ -208,10 +208,22 @@ export interface AnalysisRun {
   accumulator: AccumulatorSuggestion | null;
 }
 
+export interface AnalysisJob {
+  id: string;
+  status: "running" | "failed";
+  createdAt: string;
+  updatedAt: string;
+  filters: AnalysisFilters;
+  message: string;
+  error: string | null;
+}
+
 export interface DashboardSnapshot {
   config: ConfigStatus;
   latestRun: AnalysisRun | null;
+  activeJob: AnalysisJob | null;
   performance: PerformanceSummary;
+  draftFilters: AnalysisFilters;
   defaultFilters: AnalysisFilters;
   supportedLeagues: SupportedLeague[];
   supportedMarkets: SupportedMarketCategory[];

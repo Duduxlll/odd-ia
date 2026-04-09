@@ -1,10 +1,20 @@
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
 import { runFootballAnalysis } from "@/lib/analysis/engine";
-import { clearAnalysisHistory } from "@/lib/db";
+import { DEFAULT_FILTERS } from "@/lib/constants";
+import {
+  clearAnalysisHistory,
+  completeAnalysisJob,
+  createAnalysisJob,
+  failAnalysisJob,
+  getDashboardState,
+  getLatestAnalysisRun,
+  getRunningAnalysisJob,
+  saveDraftFilters,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -24,7 +34,7 @@ const filtersSchema = z.object({
   includeSameGame: z.boolean(),
 });
 
-async function assertAuthenticated() {
+async function requireAuthenticatedSession() {
   if (!isAuthConfigured()) {
     throw new AuthError(
       503,
@@ -37,16 +47,88 @@ async function assertAuthenticated() {
   if (!session) {
     throw new AuthError(401, "Sessão inválida ou ausente.");
   }
+
+  return session;
+}
+
+export async function GET() {
+  try {
+    const session = await requireAuthenticatedSession();
+    const [latestRun, dashboardState] = await Promise.all([
+      getLatestAnalysisRun(session.username),
+      getDashboardState(session.username),
+    ]);
+
+    return NextResponse.json({
+      activeJob: dashboardState.activeJob,
+      draftFilters: dashboardState.draftFilters ?? DEFAULT_FILTERS,
+      latestRun,
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Não foi possível carregar o estado do radar agora.";
+
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const session = await requireAuthenticatedSession();
+    const body = await request.json();
+    const filters = filtersSchema.parse(body);
+
+    await saveDraftFilters(session.username, filters);
+    return NextResponse.json({ ok: true, filters });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Não foi possível salvar os filtros agora.";
+
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }
 
 export async function POST(request: Request) {
   try {
-    await assertAuthenticated();
+    const session = await requireAuthenticatedSession();
     const body = await request.json();
     const filters = filtersSchema.parse(body);
-    const run = await runFootballAnalysis(filters);
 
-    return NextResponse.json({ run });
+    await saveDraftFilters(session.username, filters);
+
+    const currentJob = await getRunningAnalysisJob(session.username);
+    if (currentJob) {
+      return NextResponse.json({ job: currentJob }, { status: 202 });
+    }
+
+    const job = await createAnalysisJob(session.username, filters);
+
+    after(async () => {
+      try {
+        await runFootballAnalysis(filters, session.username);
+        await completeAnalysisJob(session.username, job.id);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Não foi possível concluir a análise em segundo plano.";
+        await failAnalysisJob(session.username, job.id, message);
+      }
+    });
+
+    return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -63,9 +145,18 @@ export async function POST(request: Request) {
 
 export async function DELETE() {
   try {
-    await assertAuthenticated();
-    await clearAnalysisHistory();
-    return NextResponse.json({ ok: true });
+    const session = await requireAuthenticatedSession();
+    const dashboardState = await getDashboardState(session.username);
+
+    if (dashboardState.activeJob?.status === "running") {
+      return NextResponse.json(
+        { error: "Existe uma análise em andamento. Aguarde a conclusão antes de limpar." },
+        { status: 409 },
+      );
+    }
+
+    await clearAnalysisHistory(session.username);
+    return NextResponse.json({ ok: true, filters: DEFAULT_FILTERS });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

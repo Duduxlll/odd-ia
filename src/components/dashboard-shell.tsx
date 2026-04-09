@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BadgePercent,
@@ -20,6 +20,7 @@ import { PanelCard } from "@/components/panel-card";
 import { PickCard } from "@/components/pick-card";
 import type {
   AnalysisFilters,
+  AnalysisJob,
   AnalysisRun,
   DashboardSnapshot,
   MarketCategoryId,
@@ -35,42 +36,137 @@ export function DashboardShell({
 }) {
   const router = useRouter();
   const initialFilters =
-    initialSnapshot.latestRun?.filters ?? initialSnapshot.defaultFilters;
+    initialSnapshot.activeJob?.filters ??
+    initialSnapshot.draftFilters ??
+    initialSnapshot.latestRun?.filters ??
+    initialSnapshot.defaultFilters;
   const [filters, setFilters] = useState<AnalysisFilters>(initialFilters);
   const [run, setRun] = useState<AnalysisRun | null>(initialSnapshot.latestRun);
+  const [activeJob, setActiveJob] = useState<AnalysisJob | null>(initialSnapshot.activeJob);
   const [error, setError] = useState<string | null>(null);
   const [systemNote, setSystemNote] = useState<string | null>(
     initialSnapshot.latestRun?.systemNote ?? null,
   );
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSubmittingAnalysis, setIsSubmittingAnalysis] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const isAnalyzing = isSubmittingAnalysis || activeJob?.status === "running";
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      try {
+        await fetch("/api/analyze", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(filters),
+          signal: controller.signal,
+        });
+      } catch {
+        // draft sync is best-effort
+      }
+    }, 280);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [filters]);
+
+  useEffect(() => {
+    if (activeJob?.status !== "running") {
+      if (activeJob?.status === "failed" && activeJob.error) {
+        setError(activeJob.error);
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    async function pollState() {
+      try {
+        const response = await fetch("/api/analyze", {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as {
+          activeJob?: AnalysisJob | null;
+          draftFilters?: AnalysisFilters;
+          error?: string;
+          latestRun?: AnalysisRun | null;
+        };
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Falha ao atualizar o status do scan.");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setActiveJob(payload.activeJob ?? null);
+
+        if (payload.latestRun) {
+          setRun(payload.latestRun);
+          setSystemNote(payload.latestRun.systemNote);
+        }
+
+        if (payload.activeJob?.status === "running") {
+          setFilters(payload.activeJob.filters);
+          setError(null);
+        } else if (payload.draftFilters) {
+          setFilters(payload.draftFilters);
+        }
+
+        if (payload.activeJob?.status === "failed") {
+          setError(payload.activeJob.error || "A análise falhou antes de concluir.");
+        }
+      } catch (caughtError) {
+        if (!cancelled) {
+          setError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : "Falha ao atualizar o status do scan.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSubmittingAnalysis(false);
+        }
+      }
+    }
+
+    pollState();
+    const interval = window.setInterval(pollState, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeJob?.error, activeJob?.id, activeJob?.status]);
 
   async function handleAnalyze() {
     setError(null);
     setCopyFeedback(null);
-    setIsAnalyzing(true);
+    setIsSubmittingAnalysis(true);
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(filters),
       });
-      const payload = (await response.json()) as { run?: AnalysisRun; error?: string };
-      if (!response.ok || !payload.run) {
+      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+      if (!response.ok || !payload.job) {
         throw new Error(payload.error || "Falha ao executar a análise.");
       }
-      setRun(payload.run);
-      setFilters(payload.run.filters);
-      setSystemNote(payload.run.systemNote);
+      setActiveJob(payload.job);
+      setSystemNote("Scan em andamento. Você pode atualizar a página que o processo continua.");
       router.refresh();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error ? caughtError.message : "Falha ao executar a análise.",
       );
-    } finally {
-      setIsAnalyzing(false);
+      setIsSubmittingAnalysis(false);
     }
   }
 
@@ -80,12 +176,17 @@ export function DashboardShell({
     setIsClearing(true);
     try {
       const response = await fetch("/api/analyze", { method: "DELETE" });
-      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        filters?: AnalysisFilters;
+      };
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Falha ao limpar a análise.");
       }
       setRun(null);
-      setFilters(initialSnapshot.defaultFilters);
+      setActiveJob(null);
+      setFilters(payload.filters ?? initialSnapshot.defaultFilters);
       setSystemNote(null);
       router.refresh();
     } catch (caughtError) {
@@ -188,7 +289,7 @@ export function DashboardShell({
 
         {/* Hero + Control panel */}
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.18fr)_390px]">
-          <HeroPanel run={run} config={initialSnapshot.config} />
+          <HeroPanel run={run} activeJob={activeJob} config={initialSnapshot.config} />
           <ControlPanel
             config={initialSnapshot.config}
             filters={filters}
@@ -209,13 +310,24 @@ export function DashboardShell({
           <PanelCard
             title="Resumo executivo"
             subtitle={
-              run
+              activeJob?.status === "running"
+                ? `Scan iniciado em ${formatDateTime(activeJob.createdAt)}`
+                : run
                 ? `Última execução em ${formatDateTime(run.createdAt)}`
                 : "Pronto para a primeira rodada"
             }
             icon={Gauge}
           >
-            {run ? (
+            {activeJob?.status === "running" ? (
+              <div className="space-y-4">
+                <p className="max-w-3xl text-sm leading-7 text-slate-300">
+                  O scan está em andamento com os filtros atuais. Você pode atualizar a página,
+                  e o radar continua processando até gravar a rodada completa.
+                </p>
+                <AlertBlock tone="amber" message={activeJob.message} />
+                {error ? <AlertBlock tone="rose" message={error} /> : null}
+              </div>
+            ) : run ? (
               <div className="space-y-4">
                 <p className="max-w-3xl text-sm leading-7 text-slate-300">
                   {run.executiveSummary}
@@ -229,10 +341,13 @@ export function DashboardShell({
                 ) : null}
               </div>
             ) : (
-              <EmptyRunState
-                title="Sem ruído visual até você pedir análise"
-                description="Quando você rodar a primeira rodada, este bloco vira um resumo objetivo com valor encontrado, risco dominante e leitura final da IA."
-              />
+              <div className="space-y-4">
+                {error ? <AlertBlock tone="rose" message={error} /> : null}
+                <EmptyRunState
+                  title="Sem ruído visual até você pedir análise"
+                  description="Quando você rodar a primeira rodada, este bloco vira um resumo objetivo com valor encontrado, risco dominante e leitura final da IA."
+                />
+              </div>
             )}
           </PanelCard>
 
