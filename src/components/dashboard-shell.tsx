@@ -1,0 +1,618 @@
+"use client";
+
+import { useState } from "react";
+import {
+  BadgePercent,
+  Copy,
+  ExternalLink,
+  Flame,
+  Gauge,
+  ShieldAlert,
+  Sparkles,
+} from "lucide-react";
+import { motion } from "framer-motion";
+
+import { ControlPanel } from "@/components/control-panel";
+import { HeroPanel } from "@/components/hero-panel";
+import { PanelCard } from "@/components/panel-card";
+import { PickCard } from "@/components/pick-card";
+import type {
+  AnalysisFilters,
+  AnalysisRun,
+  DashboardSnapshot,
+  MarketCategoryId,
+} from "@/lib/types";
+import { formatOdd, formatPercent } from "@/lib/utils";
+
+export function DashboardShell({ initialSnapshot }: { initialSnapshot: DashboardSnapshot }) {
+  const initialFilters =
+    initialSnapshot.latestRun?.filters ?? initialSnapshot.defaultFilters;
+  const [filters, setFilters] = useState<AnalysisFilters>(initialFilters);
+  const [run, setRun] = useState<AnalysisRun | null>(initialSnapshot.latestRun);
+  const [error, setError] = useState<string | null>(null);
+  const [systemNote, setSystemNote] = useState<string | null>(
+    initialSnapshot.latestRun?.systemNote ?? null,
+  );
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  async function handleAnalyze() {
+    setError(null);
+    setCopyFeedback(null);
+    setIsAnalyzing(true);
+    try {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(filters),
+      });
+      const payload = (await response.json()) as { run?: AnalysisRun; error?: string };
+      if (!response.ok || !payload.run) {
+        throw new Error(payload.error || "Falha ao executar a análise.");
+      }
+      setRun(payload.run);
+      setFilters(payload.run.filters);
+      setSystemNote(payload.run.systemNote);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : "Falha ao executar a análise.",
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  async function handleClear() {
+    setError(null);
+    setCopyFeedback(null);
+    setIsClearing(true);
+    try {
+      const response = await fetch("/api/analyze", { method: "DELETE" });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Falha ao limpar a análise.");
+      }
+      setRun(null);
+      setFilters(initialSnapshot.defaultFilters);
+      setSystemNote(null);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : "Falha ao limpar a análise.",
+      );
+    } finally {
+      setIsClearing(false);
+    }
+  }
+
+  async function handleCopyAccumulator() {
+    if (!run?.accumulator) return;
+    const content = [
+      `Multipla sugerida - ${
+        initialSnapshot.config.singleBookmakerMode
+          ? initialSnapshot.config.primaryBookmakerName
+          : "mercado multi-casa"
+      }`,
+      ...run.accumulator.picks.map(
+        (pick, index) =>
+          `${index + 1}. ${pick.fixtureLabel} | ${pick.marketName} | ${pick.selection} | Odd ${formatOdd(pick.bestOdd)} | Casa ${pick.bookmaker}`,
+      ),
+      `Odd combinada: ${formatOdd(run.accumulator.combinedOdd)}`,
+    ].join("\n");
+    await navigator.clipboard.writeText(content);
+    setCopyFeedback("Múltipla copiada.");
+    window.setTimeout(() => setCopyFeedback(null), 1800);
+  }
+
+  function toggleLeague(id: number) {
+    setFilters((current) => ({
+      ...current,
+      leagueIds: current.leagueIds.includes(id)
+        ? current.leagueIds.filter((leagueId) => leagueId !== id)
+        : [...current.leagueIds, id],
+    }));
+  }
+
+  function toggleMarket(id: MarketCategoryId) {
+    setFilters((current) => ({
+      ...current,
+      marketCategories: current.marketCategories.includes(id)
+        ? current.marketCategories.filter((marketId) => marketId !== id)
+        : [...current.marketCategories, id],
+    }));
+  }
+
+  const picks = run?.picks ?? [];
+
+  return (
+    <div
+      className="relative min-h-screen px-4 py-5 sm:px-6 lg:px-8 xl:px-10"
+      style={{ backgroundColor: "#060A14" }}
+    >
+      <div className="relative mx-auto flex w-full max-w-[1560px] flex-col gap-5">
+
+        {/* Hero + Control panel */}
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.18fr)_390px]">
+          <HeroPanel run={run} config={initialSnapshot.config} />
+          <ControlPanel
+            config={initialSnapshot.config}
+            filters={filters}
+            leagues={initialSnapshot.supportedLeagues}
+            markets={initialSnapshot.supportedMarkets}
+            isPending={isAnalyzing}
+            isClearing={isClearing}
+            onRun={handleAnalyze}
+            onClear={handleClear}
+            onChange={setFilters}
+            onToggleLeague={toggleLeague}
+            onToggleMarket={toggleMarket}
+          />
+        </section>
+
+        {/* Executive summary + Accumulator */}
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <PanelCard
+            title="Resumo executivo"
+            subtitle={
+              run
+                ? `Última execução em ${formatDateTime(run.createdAt)}`
+                : "Pronto para a primeira rodada"
+            }
+            icon={Gauge}
+          >
+            {run ? (
+              <div className="space-y-4">
+                <p className="max-w-3xl text-sm leading-7 text-slate-300">
+                  {run.executiveSummary}
+                </p>
+                {systemNote ? (
+                  <AlertBlock tone="amber" message={systemNote} />
+                ) : null}
+                {error ? <AlertBlock tone="rose" message={error} /> : null}
+                {copyFeedback ? (
+                  <AlertBlock tone="emerald" message={copyFeedback} />
+                ) : null}
+              </div>
+            ) : (
+              <EmptyRunState
+                title="Sem ruído visual até você pedir análise"
+                description="Quando você rodar a primeira rodada, este bloco vira um resumo objetivo com valor encontrado, risco dominante e leitura final da IA."
+              />
+            )}
+          </PanelCard>
+
+          <PanelCard
+            title="Múltipla sugerida"
+            subtitle={
+              run?.accumulator
+                ? `Odd combinada ${formatOdd(run.accumulator.combinedOdd)}`
+                : "Montada quando houver picks válidas"
+            }
+            icon={BadgePercent}
+          >
+            {run?.accumulator ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-3">
+                  {initialSnapshot.config.singleBookmakerMode ? (
+                    <a
+                      href={initialSnapshot.config.primaryBookmakerUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:text-white"
+                      style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Abrir {initialSnapshot.config.primaryBookmakerName}
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleCopyAccumulator}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:text-white"
+                    style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
+                  >
+                    <Copy className="h-4 w-4" />
+                    Copiar múltipla
+                  </button>
+                </div>
+
+                {/* Accumulator banner */}
+                <div
+                  className="rounded-2xl p-4"
+                  style={{ backgroundColor: "#070d1a", border: "1px solid #1a2840" }}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">
+                        Construção
+                      </p>
+                      <h3 className="mt-2 text-3xl font-bold tracking-[-0.05em] text-white">
+                        {formatOdd(run.accumulator.combinedOdd)}
+                      </h3>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-slate-500">
+                        Alvo: {formatOdd(run.accumulator.targetOdd)}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        Confiança: {run.accumulator.confidence.toFixed(0)} / 100
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-sm leading-6 text-slate-400">
+                    {run.accumulator.rationale}
+                  </p>
+                </div>
+
+                {/* Accumulator picks list */}
+                <div className="space-y-2.5">
+                  {run.accumulator.picks.map((pick) => (
+                    <div
+                      key={`multi:${pick.candidateId}`}
+                      className="flex items-center justify-between gap-3 rounded-2xl p-4"
+                      style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white">{pick.selection}</p>
+                        <p className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                          {pick.fixtureLabel}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-600">
+                          Melhor odd em {pick.bookmaker}
+                        </p>
+                      </div>
+                      <div
+                        className="flex-shrink-0 rounded-full px-3 py-1.5 text-sm font-bold"
+                        style={{
+                          background: "linear-gradient(135deg, #22D3EE, #0EA5E9)",
+                          color: "#060A14",
+                        }}
+                      >
+                        {formatOdd(pick.bestOdd)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <EmptyCompactState
+                title="Múltipla guardada"
+                description="Assim que o motor encontrar combinações com edge e correlação saudável, a montagem aparece aqui."
+              />
+            )}
+          </PanelCard>
+        </section>
+
+        {/* Pipeline */}
+        <PanelCard title="Como o sistema decide" subtitle="Pipeline em 5 estágios" icon={ShieldAlert}>
+          <div className="grid gap-3 lg:grid-cols-5">
+            <PipelineStep
+              step="01"
+              title="Mercado"
+              description="Odds, books, janela do scan, ligas, famílias e movimento de linha."
+            />
+            <PipelineStep
+              step="02"
+              title="Dossiê do jogo"
+              description="Tabela, contexto da competição, lineups, injuries, H2H e calendário."
+            />
+            <PipelineStep
+              step="03"
+              title="Perfil técnico"
+              description="Forma 5/10, xG, produção ofensiva/defensiva, jogadores, estilo e proxies avançadas."
+            />
+            <PipelineStep
+              step="04"
+              title="Score"
+              description="Probabilidade implícita, odd justa, edge, EV, risco, árbitro e qualidade do feed."
+            />
+            <PipelineStep
+              step="05"
+              title="IA final"
+              description="A IA revisa o dossiê, checa notícia quando preciso e preserva o tracking do modelo."
+            />
+          </div>
+        </PanelCard>
+
+        <PanelCard
+          title="Validação do modelo"
+          subtitle="Tracking histórico, CLV e leitura de longo prazo"
+          icon={BadgePercent}
+        >
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <ValidationMetric
+                label="Picks rastreadas"
+                value={String(initialSnapshot.performance.totalTracked)}
+                detail="base salva no Turso/local"
+              />
+              <ValidationMetric
+                label="Hit rate"
+                value={
+                  initialSnapshot.performance.hitRate !== null
+                    ? formatPercent(initialSnapshot.performance.hitRate)
+                    : "—"
+                }
+                detail="somente picks liquidadas"
+              />
+              <ValidationMetric
+                label="ROI"
+                value={
+                  initialSnapshot.performance.roiPct !== null
+                    ? formatPercent(initialSnapshot.performance.roiPct)
+                    : "—"
+                }
+                detail={`${initialSnapshot.performance.roiUnits.toFixed(2)}u acumuladas`}
+              />
+              <ValidationMetric
+                label="CLV positivo"
+                value={
+                  initialSnapshot.performance.positiveClvRate !== null
+                    ? formatPercent(initialSnapshot.performance.positiveClvRate)
+                    : "—"
+                }
+                detail={
+                  initialSnapshot.performance.averageClv !== null
+                    ? `CLV médio ${formatSigned(initialSnapshot.performance.averageClv)}`
+                    : "fechamento ainda em construção"
+                }
+              />
+            </div>
+
+            <div className="space-y-3">
+              <ValidationList
+                title="Mercados"
+                rows={initialSnapshot.performance.byMarket.slice(0, 3).map((bucket) => ({
+                  label: bucket.label,
+                  meta: `${bucket.settled} liquidadas`,
+                  value:
+                    bucket.hitRate !== null ? formatPercent(bucket.hitRate) : "—",
+                }))}
+              />
+              <ValidationList
+                title="Confiança"
+                rows={initialSnapshot.performance.byConfidence.slice(0, 3).map((bucket) => ({
+                  label: bucket.label,
+                  meta: `${bucket.settled} liquidadas`,
+                  value:
+                    bucket.roiUnits !== 0 ? `${bucket.roiUnits.toFixed(2)}u` : "0.00u",
+                }))}
+              />
+            </div>
+          </div>
+        </PanelCard>
+
+        {/* Picks radar */}
+        <PanelCard
+          title="Radar de picks"
+          subtitle={`${picks.length} oportunidades ordenadas por confiança e edge`}
+          icon={Flame}
+        >
+          {picks.length ? (
+            <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+              {picks.map((pick, index) => (
+                <PickCard
+                  key={pick.candidateId}
+                  pick={pick}
+                  index={index}
+                  singleBookmakerMode={initialSnapshot.config.singleBookmakerMode}
+                  bookmakerUrl={initialSnapshot.config.primaryBookmakerUrl}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-3">
+              <EmptyRunState
+                title="Radar vazio por enquanto"
+                description="Assim que você rodar a análise, as picks entram aqui já com odd, confiança e casa destacada."
+              />
+              <EmptyFeatureState
+                title="Detalhes sob demanda"
+                description="A favor, Atenção e Dossiê aparecem por botão, para o painel não virar uma parede de texto."
+              />
+              <EmptyFeatureState
+                title="Leitura compacta"
+                description="Cada card prioriza seleção, odd justa, edge e melhor casa antes de abrir o resto."
+              />
+            </div>
+          )}
+        </PanelCard>
+      </div>
+    </div>
+  );
+}
+
+function PipelineStep({
+  step,
+  title,
+  description,
+}: {
+  step: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <motion.div
+      whileHover={{ y: -4, transition: { duration: 0.18 } }}
+      className="relative rounded-2xl p-4"
+      style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
+    >
+      <p
+        className="text-4xl font-bold tracking-[-0.08em]"
+        style={{ color: "rgba(34,211,238,0.12)" }}
+      >
+        {step}
+      </p>
+      <p className="mt-2 text-sm font-semibold text-white">{title}</p>
+      <p className="mt-1.5 text-xs leading-5 text-slate-500">{description}</p>
+    </motion.div>
+  );
+}
+
+function ValidationMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl p-4"
+      style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
+    >
+      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-white">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function ValidationList({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; meta: string; value: string }>;
+}) {
+  return (
+    <div
+      className="rounded-2xl p-4"
+      style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
+    >
+      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">{title}</p>
+      <div className="mt-3 space-y-2.5">
+        {rows.length ? (
+          rows.map((row) => (
+            <div
+              key={`${title}:${row.label}`}
+              className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5"
+              style={{ backgroundColor: "#0a1020", border: "1px solid #17253b" }}
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">{row.label}</p>
+                <p className="text-[11px] text-slate-500">{row.meta}</p>
+              </div>
+              <span className="text-sm font-semibold text-cyan-300">{row.value}</span>
+            </div>
+          ))
+        ) : (
+          <p className="text-xs text-slate-500">Ainda sem volume histórico suficiente.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AlertBlock({
+  tone,
+  message,
+}: {
+  tone: "amber" | "rose" | "emerald";
+  message: string;
+}) {
+  const styles = {
+    amber: {
+      backgroundColor: "rgba(251,191,36,0.08)",
+      border: "1px solid rgba(251,191,36,0.20)",
+      color: "#FCD34D",
+    },
+    rose: {
+      backgroundColor: "rgba(251,113,133,0.08)",
+      border: "1px solid rgba(251,113,133,0.20)",
+      color: "#FDA4AF",
+    },
+    emerald: {
+      backgroundColor: "rgba(52,211,153,0.08)",
+      border: "1px solid rgba(52,211,153,0.20)",
+      color: "#6EE7B7",
+    },
+  }[tone];
+
+  return (
+    <div className="rounded-2xl px-4 py-3 text-sm leading-6" style={styles}>
+      {message}
+    </div>
+  );
+}
+
+function EmptyRunState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl p-5"
+      style={{
+        backgroundColor: "#111a2c",
+        border: "1px dashed #1e2d42",
+      }}
+    >
+      <div
+        className="mb-3 inline-flex rounded-xl p-3"
+        style={{
+          backgroundColor: "rgba(34,211,238,0.10)",
+          border: "1px solid rgba(34,211,238,0.20)",
+        }}
+      >
+        <Sparkles className="h-4 w-4 text-[#22D3EE]" />
+      </div>
+      <p className="text-sm font-semibold text-white">{title}</p>
+      <p className="mt-2 max-w-xl text-xs leading-5 text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function EmptyCompactState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl p-5"
+      style={{ backgroundColor: "#111a2c", border: "1px dashed #1e2d42" }}
+    >
+      <p className="text-sm font-semibold text-white">{title}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function EmptyFeatureState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div
+      className="rounded-2xl p-5"
+      style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
+    >
+      <p className="mb-2 text-[10px] uppercase tracking-[0.2em] text-slate-600">Preview</p>
+      <p className="text-sm font-semibold text-white">{title}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatSigned(value: number) {
+  const fixed = value.toFixed(2);
+  return value > 0 ? `+${fixed}` : fixed;
+}

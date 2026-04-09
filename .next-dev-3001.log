@@ -1,0 +1,10 @@
+
+> analise-ia@0.1.0 dev
+> next dev --port 3001
+
+▲ Next.js 16.2.3 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://26.54.78.232:3001
+- Environments: .env.local
+✓ Ready in 743ms
+[?25h
