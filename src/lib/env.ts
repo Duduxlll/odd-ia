@@ -4,6 +4,9 @@ const currentYear = new Date().getFullYear();
 const inferredSeason = new Date().getMonth() >= 6 ? currentYear : currentYear - 1;
 
 const schema = z.object({
+  AUTH_USERNAME: z.string().optional(),
+  AUTH_PASSWORD: z.string().optional(),
+  AUTH_SECRET: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-5.4"),
   OPENAI_ENABLE_WEB_SEARCH: z
@@ -35,6 +38,9 @@ const schema = z.object({
 });
 
 const parsed = schema.parse({
+  AUTH_USERNAME: process.env.AUTH_USERNAME,
+  AUTH_PASSWORD: process.env.AUTH_PASSWORD,
+  AUTH_SECRET: process.env.AUTH_SECRET,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENAI_MODEL: process.env.OPENAI_MODEL,
   OPENAI_ENABLE_WEB_SEARCH: process.env.OPENAI_ENABLE_WEB_SEARCH,
@@ -64,6 +70,7 @@ export const env = {
 
 export function getConfigStatus() {
   return {
+    authEnabled: Boolean(env.AUTH_USERNAME && env.AUTH_PASSWORD && env.AUTH_SECRET),
     openai: Boolean(env.OPENAI_API_KEY),
     apiFootball: Boolean(env.API_FOOTBALL_KEY),
     apiFootballPlanMode: env.API_FOOTBALL_FREE_PLAN_MODE ? ("free" as const) : ("pro" as const),

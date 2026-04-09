@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Flame,
   Gauge,
+  LogOut,
   ShieldAlert,
   Sparkles,
 } from "lucide-react";
@@ -25,7 +26,13 @@ import type {
 } from "@/lib/types";
 import { formatOdd, formatPercent } from "@/lib/utils";
 
-export function DashboardShell({ initialSnapshot }: { initialSnapshot: DashboardSnapshot }) {
+export function DashboardShell({
+  initialSnapshot,
+  currentUsername,
+}: {
+  initialSnapshot: DashboardSnapshot;
+  currentUsername: string;
+}) {
   const router = useRouter();
   const initialFilters =
     initialSnapshot.latestRun?.filters ?? initialSnapshot.defaultFilters;
@@ -37,6 +44,7 @@ export function DashboardShell({ initialSnapshot }: { initialSnapshot: Dashboard
   );
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   async function handleAnalyze() {
@@ -108,6 +116,25 @@ export function DashboardShell({ initialSnapshot }: { initialSnapshot: Dashboard
     window.setTimeout(() => setCopyFeedback(null), 1800);
   }
 
+  async function handleLogout() {
+    setError(null);
+    setCopyFeedback(null);
+    setIsLoggingOut(true);
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Falha ao encerrar a sessão.");
+      }
+      router.push("/login");
+      router.refresh();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Falha ao encerrar a sessão.");
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }
+
   function toggleLeague(id: number) {
     setFilters((current) => ({
       ...current,
@@ -134,6 +161,30 @@ export function DashboardShell({ initialSnapshot }: { initialSnapshot: Dashboard
       style={{ backgroundColor: "#060A14" }}
     >
       <div className="relative mx-auto flex w-full max-w-[1560px] flex-col gap-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-[11px] font-medium uppercase tracking-[0.2em] text-slate-300"
+              style={{ backgroundColor: "#0b1322", border: "1px solid #18253a" }}
+            >
+              Sessão ativa
+            </span>
+            <span className="text-sm text-slate-500">
+              Logado como <span className="font-medium text-slate-200">{currentUsername}</span>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:text-white disabled:cursor-wait disabled:opacity-70"
+            style={{ backgroundColor: "#0b1322", border: "1px solid #18253a" }}
+          >
+            <LogOut className="h-4 w-4" />
+            {isLoggingOut ? "Saindo..." : "Sair"}
+          </button>
+        </div>
 
         {/* Hero + Control panel */}
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.18fr)_390px]">
