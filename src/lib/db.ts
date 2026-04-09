@@ -986,6 +986,17 @@ export async function clearAnalysisHistory(username: string) {
   await ensureSchema();
 
   await db.execute({
+    sql: `
+      DELETE FROM ${SNAPSHOTS_TABLE}
+      WHERE run_id IN (
+        SELECT id
+        FROM ${RUNS_TABLE}
+        WHERE username = ? OR username = ''
+      )
+    `,
+    args: [username],
+  });
+  await db.execute({
     sql: `DELETE FROM ${PICKS_TABLE} WHERE username = ? OR username = ''`,
     args: [username],
   });
