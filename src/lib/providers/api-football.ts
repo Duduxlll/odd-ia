@@ -1,4 +1,19 @@
 import { env } from "@/lib/env";
+const API_FOOTBALL_REQUEST_TIMEOUT_MS = 15000;
+const DIRECTORY_CACHE_TTL_MS = 1000 * 60 * 30;
+
+let leaguesDirectoryCache:
+  | {
+      expiresAt: number;
+      value: SupportedLeague[];
+    }
+  | null = null;
+let bookmakersDirectoryCache:
+  | {
+      expiresAt: number;
+      value: SupportedBookmaker[];
+    }
+  | null = null;
 import type {
   SupportedBookmaker,
   ApiFootballFixture,
@@ -84,13 +99,30 @@ async function apiFootballFetch<T>(
     }
   });
 
-  const response = await fetch(url.toString(), {
-    cache: "no-store",
-    headers: {
-      Accept: "application/json",
-      "x-apisports-key": env.API_FOOTBALL_KEY!,
-    },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_FOOTBALL_REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "x-apisports-key": env.API_FOOTBALL_KEY!,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(
+        `API-Football demorou mais de ${Math.round(API_FOOTBALL_REQUEST_TIMEOUT_MS / 1000)}s para responder.`,
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new Error(`API-Football respondeu ${response.status} ${response.statusText}.`);
@@ -347,6 +379,10 @@ export async function fetchLeagueRecentFixtures(
 }
 
 export async function fetchAvailableLeagues() {
+  if (leaguesDirectoryCache && leaguesDirectoryCache.expiresAt > Date.now()) {
+    return leaguesDirectoryCache.value;
+  }
+
   const payload = await apiFootballFetch<
     Array<{
       league?: {
@@ -367,7 +403,7 @@ export async function fetchAvailableLeagues() {
     season: env.DEFAULT_SEASON,
   });
 
-  const leagues = payload.response
+  const mappedLeagues = payload.response
     .map((entry) => {
       const id = entry.league?.id;
       const name = entry.league?.name;
@@ -386,24 +422,35 @@ export async function fetchAvailableLeagues() {
     .filter((league): league is SupportedLeague => Boolean(league));
 
   const deduped = new Map<number, SupportedLeague>();
-  for (const league of leagues) {
+  for (const league of mappedLeagues) {
     deduped.set(league.id, league);
   }
 
-  return Array.from(deduped.values()).sort(
+  const leagues = Array.from(deduped.values()).sort(
     (left, right) =>
       left.country.localeCompare(right.country, "pt-BR") ||
       left.name.localeCompare(right.name, "pt-BR"),
   );
+
+  leaguesDirectoryCache = {
+    value: leagues,
+    expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
+  };
+
+  return leagues;
 }
 
 export async function fetchAvailableBookmakers() {
+  if (bookmakersDirectoryCache && bookmakersDirectoryCache.expiresAt > Date.now()) {
+    return bookmakersDirectoryCache.value;
+  }
+
   const payload = await apiFootballFetch<Array<{ id?: number; name?: string }>>(
     "/odds/bookmakers",
     {},
   );
 
-  return payload.response
+  const bookmakers = payload.response
     .map((entry) => {
       if (!entry.id || !entry.name) {
         return null;
@@ -417,4 +464,11 @@ export async function fetchAvailableBookmakers() {
     })
     .filter((bookmaker): bookmaker is SupportedBookmaker => Boolean(bookmaker))
     .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
+
+  bookmakersDirectoryCache = {
+    value: bookmakers,
+    expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS,
+  };
+
+  return bookmakers;
 }
