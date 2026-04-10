@@ -210,7 +210,7 @@ export interface AnalysisRun {
 
 export interface AnalysisJob {
   id: string;
-  status: "running" | "failed" | "completed";
+  status: "queued" | "running" | "failed" | "completed";
   createdAt: string;
   updatedAt: string;
   filters: AnalysisFilters;
@@ -218,11 +218,54 @@ export interface AnalysisJob {
   error: string | null;
 }
 
+export interface CalibrationBucket {
+  key: string;
+  scope: "overall" | "market" | "league";
+  sampleSize: number;
+  settledCount: number;
+  roiPct: number | null;
+  hitRate: number | null;
+  positiveClvRate: number | null;
+  probabilityDelta: number;
+  confidenceDelta: number;
+  riskDelta: number;
+}
+
+export interface CalibrationProfile {
+  updatedAt: string | null;
+  sampleSize: number;
+  overall: CalibrationBucket | null;
+  byMarket: Record<string, CalibrationBucket>;
+  byLeague: Record<string, CalibrationBucket>;
+}
+
+export interface PrefetchStatus {
+  fixtureEntries: number;
+  oddsEntries: number;
+  lastFixturesAt: string | null;
+  lastOddsAt: string | null;
+}
+
+export interface WorkerStatus {
+  queuedJobs: number;
+  runningJobs: number;
+  failedLast24h: number;
+  completedLast24h: number;
+  lastCompletedAt: string | null;
+}
+
+export interface OperationsStatus {
+  calibration: CalibrationProfile;
+  prefetch: PrefetchStatus;
+  worker: WorkerStatus;
+}
+
 export interface DashboardSnapshot {
   config: ConfigStatus;
   latestRun: AnalysisRun | null;
   activeJob: AnalysisJob | null;
   performance: PerformanceSummary;
+  operations: OperationsStatus;
   draftFilters: AnalysisFilters;
   defaultFilters: AnalysisFilters;
   supportedLeagues: SupportedLeague[];

@@ -113,6 +113,7 @@ export function HeroPanel({
   activeJob: AnalysisJob | null;
   config: ConfigStatus;
 }) {
+  const jobPending = activeJob?.status === "queued" || activeJob?.status === "running";
   const filters = activeJob?.filters ?? run?.filters;
   const leagues = filters?.leagueIds.length ?? 0;
   const markets = filters?.marketCategories.length ?? 0;
@@ -190,8 +191,10 @@ export function HeroPanel({
               <ScopePill label={`${leagues} ligas ativas`} />
               <ScopePill label={`${markets} famílias`} />
               <ScopePill label={`faixa ${band}`} />
-              {activeJob?.status === "running" ? (
-                <ScopePill label="scan em andamento" />
+              {jobPending ? (
+                <ScopePill
+                  label={activeJob?.status === "queued" ? "na fila do worker" : "scan em andamento"}
+                />
               ) : run ? (
                 <ScopePill label={`atualizado ${formatDateTimeInSaoPaulo(run.createdAt)}`} />
               ) : null}
@@ -228,6 +231,8 @@ export function HeroPanel({
               <p className="mt-2 text-sm leading-6 text-slate-300">
                 {activeJob?.status === "running"
                   ? "O scan atual segue em segundo plano com os filtros já travados. Recarregar a página não derruba mais a execução."
+                  : activeJob?.status === "queued"
+                    ? "O job já foi persistido na fila e o worker dedicado vai assumir o scan. Isso desacopla o clique do processamento pesado."
                   : run?.executiveSummary ??
                   "Escolha o recorte e rode a análise. O painel vai preencher resumo, picks, múltipla e leitura de risco sem espalhar tudo em cards gigantes."}
               </p>
@@ -254,7 +259,11 @@ export function HeroPanel({
                   Estado do motor
                 </p>
                 <h2 className="mt-1.5 text-lg font-semibold tracking-[-0.03em] text-white">
-                  {activeJob?.status === "running" ? "Escaneando agora" : "Pronto para escanear"}
+                {activeJob?.status === "running"
+                  ? "Escaneando agora"
+                  : activeJob?.status === "queued"
+                    ? "Na fila do worker"
+                    : "Pronto para escanear"}
                 </h2>
               </div>
               <div

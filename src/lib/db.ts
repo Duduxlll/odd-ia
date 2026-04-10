@@ -6,15 +6,21 @@ import type {
   AnalysisJob,
   AnalysisPick,
   AnalysisRun,
+  CalibrationBucket,
+  CalibrationProfile,
   ClvSnapshot,
   LineMovementSnapshot,
+  OperationsStatus,
   PerformanceBucket,
   PerformanceSummary,
+  PrefetchStatus,
   PickTrackingSnapshot,
   RefereeStatsSnapshot,
+  WorkerStatus,
   XgContextSnapshot,
 } from "@/lib/types";
 import { env } from "@/lib/env";
+import { clamp } from "@/lib/utils";
 
 const db = createClient({
   url: env.TURSO_DATABASE_URL || "file:analise-ia.db",
@@ -26,6 +32,8 @@ const PICKS_TABLE = "radar_analysis_picks";
 const SNAPSHOTS_TABLE = "radar_market_snapshots";
 const STATE_TABLE = "radar_dashboard_state";
 const JOBS_TABLE = "radar_analysis_jobs";
+const PREFETCH_TABLE = "radar_prefetch_cache";
+const CALIBRATION_TABLE = "radar_calibration_profiles";
 const VERCEL_ANALYSIS_STALE_MS = 15 * 60 * 1000;
 const LOCAL_ANALYSIS_STALE_MS = 30 * 60 * 1000;
 
@@ -46,6 +54,11 @@ function parseJson<T>(value: unknown, fallback: T) {
 function numberValue(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function nullableNumberValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function averageOrNull(values: Array<number | null>) {
@@ -138,6 +151,21 @@ function mapJobRow(row: Record<string, unknown>): AnalysisJob {
   };
 }
 
+function mapCalibrationRow(row: Record<string, unknown>): CalibrationBucket {
+  return {
+    key: String(row.scope_key),
+    scope: String(row.scope_type) as CalibrationBucket["scope"],
+    sampleSize: numberValue(row.sample_size),
+    settledCount: numberValue(row.settled_count),
+    roiPct: nullableNumberValue(row.roi_pct),
+    hitRate: nullableNumberValue(row.hit_rate),
+    positiveClvRate: nullableNumberValue(row.positive_clv_rate),
+    probabilityDelta: numberValue(row.probability_delta),
+    confidenceDelta: numberValue(row.confidence_delta),
+    riskDelta: numberValue(row.risk_delta),
+  };
+}
+
 function getAnalysisStaleWindowMs() {
   return process.env.VERCEL ? VERCEL_ANALYSIS_STALE_MS : LOCAL_ANALYSIS_STALE_MS;
 }
@@ -196,13 +224,16 @@ async function normalizeActiveJob(username: string, job: AnalysisJob) {
     return null;
   }
 
-  if (job.status !== "running" || !isJobStale(job.updatedAt)) {
+  if ((job.status !== "running" && job.status !== "queued") || !isJobStale(job.updatedAt)) {
     return job;
   }
 
-  const timeoutMessage = process.env.VERCEL
-    ? "A análise excedeu o tempo limite da Vercel e foi encerrada. Reduza ligas, janela ou volume de picks e rode novamente."
-    : "A análise ficou sem atualizar por tempo demais e foi encerrada para evitar travamento.";
+  const timeoutMessage =
+    job.status === "queued"
+      ? "O job ficou tempo demais na fila sem ser assumido pelo worker. Rode novamente para reacender a fila."
+      : process.env.VERCEL
+        ? "A análise excedeu o tempo limite da Vercel e foi encerrada. Reduza ligas, janela ou volume de picks e rode novamente."
+        : "A análise ficou sem atualizar por tempo demais e foi encerrada para evitar travamento.";
 
   await failAnalysisJob(username, job.id, timeoutMessage);
 
@@ -318,6 +349,35 @@ export async function ensureSchema() {
           error_text TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
+        )
+      `);
+
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ${PREFETCH_TABLE} (
+          kind TEXT NOT NULL,
+          cache_key TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          observed_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          PRIMARY KEY (kind, cache_key)
+        )
+      `);
+
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ${CALIBRATION_TABLE} (
+          username TEXT NOT NULL,
+          scope_type TEXT NOT NULL,
+          scope_key TEXT NOT NULL,
+          sample_size INTEGER NOT NULL,
+          settled_count INTEGER NOT NULL,
+          roi_pct REAL,
+          hit_rate REAL,
+          positive_clv_rate REAL,
+          probability_delta REAL NOT NULL,
+          confidence_delta REAL NOT NULL,
+          risk_delta REAL NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (username, scope_type, scope_key)
         )
       `);
 
@@ -585,15 +645,15 @@ export async function createAnalysisJob(username: string, filters: AnalysisFilte
         message,
         error_text,
         created_at,
-        updated_at
+      updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
     args: [
       id,
       username,
-      "running",
+      "queued",
       JSON.stringify(filters),
-      "Scan em andamento. O radar continua processando mesmo se a página recarregar.",
+      "Job enfileirado. O worker vai assumir a análise em instantes.",
       null,
       timestamp,
       timestamp,
@@ -613,11 +673,11 @@ export async function createAnalysisJob(username: string, filters: AnalysisFilte
 
   return {
     id,
-    status: "running",
+    status: "queued",
     createdAt: timestamp,
     updatedAt: timestamp,
     filters,
-    message: "Scan em andamento. O radar continua processando mesmo se a página recarregar.",
+    message: "Job enfileirado. O worker vai assumir a análise em instantes.",
     error: null,
   } satisfies AnalysisJob;
 }
@@ -626,7 +686,7 @@ export async function getRunningAnalysisJob(username: string) {
   await ensureSchema();
 
   const result = await db.execute({
-    sql: `SELECT * FROM ${JOBS_TABLE} WHERE username = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1`,
+    sql: `SELECT * FROM ${JOBS_TABLE} WHERE username = ? AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1`,
     args: [username],
   });
 
@@ -639,7 +699,64 @@ export async function getRunningAnalysisJob(username: string) {
     mapJobRow(result.rows[0] as Record<string, unknown>),
   );
 
-  return activeJob?.status === "running" ? activeJob : null;
+  return activeJob && (activeJob.status === "queued" || activeJob.status === "running")
+    ? activeJob
+    : null;
+}
+
+type QueueJobRecord = AnalysisJob & {
+  username: string;
+};
+
+function mapQueueJobRow(row: Record<string, unknown>): QueueJobRecord {
+  return {
+    ...mapJobRow(row),
+    username: String(row.username),
+  };
+}
+
+export async function getQueuedAnalysisJobById(jobId: string) {
+  await ensureSchema();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM ${JOBS_TABLE} WHERE id = ? AND status IN ('queued', 'running') LIMIT 1`,
+    args: [jobId],
+  });
+
+  if (!result.rows.length) {
+    return null;
+  }
+
+  return mapQueueJobRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function getNextQueuedAnalysisJob() {
+  await ensureSchema();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM ${JOBS_TABLE} WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1`,
+  });
+
+  if (!result.rows.length) {
+    return null;
+  }
+
+  return mapQueueJobRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function startAnalysisJob(username: string, jobId: string, message: string) {
+  await ensureSchema();
+
+  const timestamp = new Date().toISOString();
+
+  await db.execute({
+    sql: `
+      UPDATE ${JOBS_TABLE}
+      SET status = 'running', message = ?, error_text = NULL, updated_at = ?
+      WHERE id = ? AND username = ? AND status = 'queued'
+    `,
+    args: [message, timestamp, jobId, username],
+  });
 }
 
 export async function touchAnalysisJob(username: string, jobId: string, message?: string) {
@@ -1086,6 +1203,403 @@ export async function getPerformanceSummary(username: string) {
     byLeague: finalizeBuckets(byLeague),
     byConfidence: finalizeBuckets(byConfidence),
   } satisfies PerformanceSummary;
+}
+
+export async function setPrefetchCache<T>(
+  kind: "fixtures" | "odds",
+  cacheKey: string,
+  payload: T,
+  ttlMinutes = 45,
+) {
+  await ensureSchema();
+
+  const observedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
+
+  await db.execute({
+    sql: `
+      INSERT INTO ${PREFETCH_TABLE} (kind, cache_key, payload_json, observed_at, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(kind, cache_key) DO UPDATE SET
+        payload_json = excluded.payload_json,
+        observed_at = excluded.observed_at,
+        expires_at = excluded.expires_at
+    `,
+    args: [kind, cacheKey, JSON.stringify(payload), observedAt, expiresAt],
+  });
+}
+
+export async function getPrefetchCache<T>(
+  kind: "fixtures" | "odds",
+  cacheKey: string,
+  maxAgeMinutes = 45,
+) {
+  await ensureSchema();
+
+  const result = await db.execute({
+    sql: `
+      SELECT payload_json, observed_at
+      FROM ${PREFETCH_TABLE}
+      WHERE kind = ? AND cache_key = ? AND expires_at >= ?
+      LIMIT 1
+    `,
+    args: [kind, cacheKey, new Date().toISOString()],
+  });
+
+  if (!result.rows.length) {
+    return null;
+  }
+
+  const row = result.rows[0] as Record<string, unknown>;
+  const observedAt = String(row.observed_at);
+  const observedAtMs = new Date(observedAt).getTime();
+  if (!Number.isFinite(observedAtMs) || Date.now() - observedAtMs > maxAgeMinutes * 60 * 1000) {
+    return null;
+  }
+
+  return parseJson<T | null>(row.payload_json, null);
+}
+
+export async function purgeExpiredPrefetchCache() {
+  await ensureSchema();
+
+  await db.execute({
+    sql: `DELETE FROM ${PREFETCH_TABLE} WHERE expires_at < ?`,
+    args: [new Date().toISOString()],
+  });
+}
+
+export async function getPrefetchStatus() {
+  await ensureSchema();
+
+  const result = await db.execute({
+    sql: `
+      SELECT
+        kind,
+        COUNT(*) AS total,
+        MAX(observed_at) AS last_observed_at
+      FROM ${PREFETCH_TABLE}
+      GROUP BY kind
+    `,
+  });
+
+  const status: PrefetchStatus = {
+    fixtureEntries: 0,
+    oddsEntries: 0,
+    lastFixturesAt: null,
+    lastOddsAt: null,
+  };
+
+  for (const row of result.rows) {
+    const record = row as Record<string, unknown>;
+    const kind = String(record.kind);
+    if (kind === "fixtures") {
+      status.fixtureEntries = numberValue(record.total);
+      status.lastFixturesAt = record.last_observed_at ? String(record.last_observed_at) : null;
+    } else if (kind === "odds") {
+      status.oddsEntries = numberValue(record.total);
+      status.lastOddsAt = record.last_observed_at ? String(record.last_observed_at) : null;
+    }
+  }
+
+  return status;
+}
+
+type CalibrationAccumulator = {
+  sampleSize: number;
+  settledCount: number;
+  wins: number;
+  losses: number;
+  voids: number;
+  roiUnits: number;
+  clvCount: number;
+  positiveClv: number;
+};
+
+function createCalibrationAccumulator(): CalibrationAccumulator {
+  return {
+    sampleSize: 0,
+    settledCount: 0,
+    wins: 0,
+    losses: 0,
+    voids: 0,
+    roiUnits: 0,
+    clvCount: 0,
+    positiveClv: 0,
+  };
+}
+
+function accumulateCalibrationBucket(
+  accumulator: CalibrationAccumulator,
+  tracking: PickTrackingSnapshot,
+  clv: ClvSnapshot | null,
+) {
+  accumulator.sampleSize += 1;
+
+  if (tracking.status === "won") {
+    accumulator.settledCount += 1;
+    accumulator.wins += 1;
+    accumulator.roiUnits += tracking.profitUnits ?? 0;
+  } else if (tracking.status === "lost") {
+    accumulator.settledCount += 1;
+    accumulator.losses += 1;
+    accumulator.roiUnits += tracking.profitUnits ?? 0;
+  } else if (tracking.status === "void") {
+    accumulator.settledCount += 1;
+    accumulator.voids += 1;
+    accumulator.roiUnits += tracking.profitUnits ?? 0;
+  }
+
+  if (clv && clv.status !== "pending" && clv.status !== "unavailable") {
+    accumulator.clvCount += 1;
+    if (clv.status === "positive") {
+      accumulator.positiveClv += 1;
+    }
+  }
+}
+
+function buildCalibrationBucket(
+  scope: CalibrationBucket["scope"],
+  key: string,
+  bucket: CalibrationAccumulator,
+): CalibrationBucket | null {
+  if (!bucket.sampleSize) {
+    return null;
+  }
+
+  const graded = bucket.wins + bucket.losses;
+  const stakeBase = bucket.wins + bucket.losses + bucket.voids;
+  const roiPct = stakeBase ? bucket.roiUnits / stakeBase : null;
+  const hitRate = graded ? bucket.wins / graded : null;
+  const positiveClvRate = bucket.clvCount ? bucket.positiveClv / bucket.clvCount : null;
+  const maturity = clamp(bucket.settledCount / 36, 0.18, 1);
+  const roiSignal = clamp(roiPct ?? 0, -0.22, 0.22);
+  const hitSignal = clamp((hitRate ?? 0.5) - 0.5, -0.18, 0.18);
+  const clvSignal = clamp((positiveClvRate ?? 0.5) - 0.5, -0.2, 0.2);
+
+  return {
+    key,
+    scope,
+    sampleSize: bucket.sampleSize,
+    settledCount: bucket.settledCount,
+    roiPct,
+    hitRate,
+    positiveClvRate,
+    probabilityDelta: clamp(
+      (roiSignal * 0.08 + hitSignal * 0.06 + clvSignal * 0.05) * maturity,
+      -0.035,
+      0.035,
+    ),
+    confidenceDelta: clamp(
+      (roiSignal * 70 + hitSignal * 48 + clvSignal * 36) * maturity,
+      -8,
+      8,
+    ),
+    riskDelta: clamp(
+      (-roiSignal * 0.16 - hitSignal * 0.1 - clvSignal * 0.08) * maturity,
+      -0.08,
+      0.08,
+    ),
+  };
+}
+
+export async function rebuildCalibrationProfile(username: string) {
+  await ensureSchema();
+
+  const rows = await db.execute({
+    sql: `
+      SELECT league_id, market_category, tracking_json, clv_json
+      FROM ${PICKS_TABLE}
+      WHERE username = ? OR username = ''
+    `,
+    args: [username],
+  });
+
+  const overall = createCalibrationAccumulator();
+  const byMarket = new Map<string, CalibrationAccumulator>();
+  const byLeague = new Map<string, CalibrationAccumulator>();
+
+  for (const row of rows.rows) {
+    const record = row as Record<string, unknown>;
+    const tracking =
+      parseJson<PickTrackingSnapshot | null>(record.tracking_json, null) ?? {
+        status: "open",
+        settledAt: null,
+        resultLabel: null,
+        profitUnits: null,
+      };
+    const clv = parseJson<ClvSnapshot | null>(record.clv_json, null);
+    const marketKey = String(record.market_category);
+    const leagueKey = String(numberValue(record.league_id));
+
+    accumulateCalibrationBucket(overall, tracking, clv);
+
+    const marketBucket = byMarket.get(marketKey) ?? createCalibrationAccumulator();
+    accumulateCalibrationBucket(marketBucket, tracking, clv);
+    byMarket.set(marketKey, marketBucket);
+
+    const leagueBucket = byLeague.get(leagueKey) ?? createCalibrationAccumulator();
+    accumulateCalibrationBucket(leagueBucket, tracking, clv);
+    byLeague.set(leagueKey, leagueBucket);
+  }
+
+  const builtOverall = buildCalibrationBucket("overall", "global", overall);
+  const builtByMarket = Array.from(byMarket.entries())
+    .map(([key, bucket]) => buildCalibrationBucket("market", key, bucket))
+    .filter((bucket): bucket is CalibrationBucket => Boolean(bucket));
+  const builtByLeague = Array.from(byLeague.entries())
+    .map(([key, bucket]) => buildCalibrationBucket("league", key, bucket))
+    .filter((bucket): bucket is CalibrationBucket => Boolean(bucket));
+  const updatedAt = new Date().toISOString();
+
+  await db.execute({
+    sql: `DELETE FROM ${CALIBRATION_TABLE} WHERE username = ?`,
+    args: [username],
+  });
+
+  for (const bucket of [builtOverall, ...builtByMarket, ...builtByLeague].filter(
+    (value): value is CalibrationBucket => Boolean(value),
+  )) {
+    await db.execute({
+      sql: `
+        INSERT INTO ${CALIBRATION_TABLE} (
+          username,
+          scope_type,
+          scope_key,
+          sample_size,
+          settled_count,
+          roi_pct,
+          hit_rate,
+          positive_clv_rate,
+          probability_delta,
+          confidence_delta,
+          risk_delta,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args: [
+        username,
+        bucket.scope,
+        bucket.key,
+        bucket.sampleSize,
+        bucket.settledCount,
+        bucket.roiPct,
+        bucket.hitRate,
+        bucket.positiveClvRate,
+        bucket.probabilityDelta,
+        bucket.confidenceDelta,
+        bucket.riskDelta,
+        updatedAt,
+      ],
+    });
+  }
+
+  return {
+    updatedAt,
+    sampleSize: overall.sampleSize,
+    overall: builtOverall,
+    byMarket: Object.fromEntries(builtByMarket.map((bucket) => [bucket.key, bucket])),
+    byLeague: Object.fromEntries(builtByLeague.map((bucket) => [bucket.key, bucket])),
+  } satisfies CalibrationProfile;
+}
+
+export async function getCalibrationProfile(username: string) {
+  await ensureSchema();
+
+  const result = await db.execute({
+    sql: `
+      SELECT *
+      FROM ${CALIBRATION_TABLE}
+      WHERE username = ?
+      ORDER BY updated_at DESC
+    `,
+    args: [username],
+  });
+
+  if (!result.rows.length) {
+    return {
+      updatedAt: null,
+      sampleSize: 0,
+      overall: null,
+      byMarket: {},
+      byLeague: {},
+    } satisfies CalibrationProfile;
+  }
+
+  const buckets = result.rows.map((row) => mapCalibrationRow(row as Record<string, unknown>));
+  const updatedAt = String((result.rows[0] as Record<string, unknown>).updated_at);
+  const overall = buckets.find((bucket) => bucket.scope === "overall") ?? null;
+
+  return {
+    updatedAt,
+    sampleSize: overall?.sampleSize ?? 0,
+    overall,
+    byMarket: Object.fromEntries(
+      buckets.filter((bucket) => bucket.scope === "market").map((bucket) => [bucket.key, bucket]),
+    ),
+    byLeague: Object.fromEntries(
+      buckets.filter((bucket) => bucket.scope === "league").map((bucket) => [bucket.key, bucket]),
+    ),
+  } satisfies CalibrationProfile;
+}
+
+export async function getWorkerStatus(username: string) {
+  await ensureSchema();
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const result = await db.execute({
+    sql: `
+      SELECT
+        SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued_jobs,
+        SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running_jobs,
+        SUM(CASE WHEN status = 'failed' AND updated_at >= ? THEN 1 ELSE 0 END) AS failed_last_24h,
+        SUM(CASE WHEN status = 'completed' AND updated_at >= ? THEN 1 ELSE 0 END) AS completed_last_24h,
+        MAX(CASE WHEN status = 'completed' THEN updated_at END) AS last_completed_at
+      FROM ${JOBS_TABLE}
+      WHERE username = ?
+    `,
+    args: [since, since, username],
+  });
+
+  const row = result.rows[0] as Record<string, unknown> | undefined;
+
+  return {
+    queuedJobs: numberValue(row?.queued_jobs),
+    runningJobs: numberValue(row?.running_jobs),
+    failedLast24h: numberValue(row?.failed_last_24h),
+    completedLast24h: numberValue(row?.completed_last_24h),
+    lastCompletedAt: row?.last_completed_at ? String(row.last_completed_at) : null,
+  } satisfies WorkerStatus;
+}
+
+export async function getOperationsStatus(username: string) {
+  const [prefetch, calibration, worker] = await Promise.all([
+    getPrefetchStatus(),
+    getCalibrationProfile(username),
+    getWorkerStatus(username),
+  ]);
+
+  return {
+    prefetch,
+    calibration,
+    worker,
+  } satisfies OperationsStatus;
+}
+
+export async function listKnownAnalysisUsers() {
+  await ensureSchema();
+
+  const result = await db.execute({
+    sql: `
+      SELECT DISTINCT username
+      FROM ${STATE_TABLE}
+      WHERE username <> ''
+    `,
+  });
+
+  return result.rows
+    .map((row) => String((row as Record<string, unknown>).username))
+    .filter(Boolean);
 }
 
 export async function clearAnalysisHistory(username: string) {

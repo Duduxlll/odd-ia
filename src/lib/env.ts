@@ -8,6 +8,7 @@ const schema = z.object({
   AUTH_PASSWORD: z.string().optional(),
   AUTH_USERS_JSON: z.string().optional(),
   AUTH_SECRET: z.string().optional(),
+  CRON_SECRET: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-5.4"),
   OPENAI_ENABLE_WEB_SEARCH: z
@@ -43,6 +44,7 @@ const parsed = schema.parse({
   AUTH_PASSWORD: process.env.AUTH_PASSWORD,
   AUTH_USERS_JSON: process.env.AUTH_USERS_JSON,
   AUTH_SECRET: process.env.AUTH_SECRET,
+  CRON_SECRET: process.env.CRON_SECRET,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENAI_MODEL: process.env.OPENAI_MODEL,
   OPENAI_ENABLE_WEB_SEARCH: process.env.OPENAI_ENABLE_WEB_SEARCH,

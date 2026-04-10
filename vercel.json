@@ -1,4 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "fluid": true
+  "fluid": true,
+  "crons": [
+    {
+      "path": "/api/internal/worker",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/prefetch",
+      "schedule": "*/20 * * * *"
+    }
+  ]
 }

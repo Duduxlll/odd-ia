@@ -3,19 +3,16 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
-import { runFootballAnalysis } from "@/lib/analysis/engine";
 import { DEFAULT_FILTERS } from "@/lib/constants";
 import {
   clearAnalysisHistory,
-  completeAnalysisJob,
   createAnalysisJob,
-  failAnalysisJob,
   getDashboardState,
   getLatestAnalysisRun,
   getRunningAnalysisJob,
   saveDraftFilters,
-  touchAnalysisJob,
 } from "@/lib/db";
+import { dispatchWorker } from "@/lib/worker";
 
 export const runtime = "nodejs";
 export const maxDuration = 800;
@@ -106,6 +103,7 @@ export async function POST(request: Request) {
     const session = await requireAuthenticatedSession();
     const body = await request.json();
     const filters = filtersSchema.parse(body);
+    const origin = new URL(request.url).origin;
 
     await saveDraftFilters(session.username, filters);
 
@@ -117,19 +115,7 @@ export async function POST(request: Request) {
     const job = await createAnalysisJob(session.username, filters);
 
     after(async () => {
-      try {
-        await touchAnalysisJob(session.username, job.id, "Inicializando scan em segundo plano.");
-        await runFootballAnalysis(filters, session.username, {
-          onProgress: (message) => touchAnalysisJob(session.username, job.id, message),
-        });
-        await completeAnalysisJob(session.username, job.id);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Não foi possível concluir a análise em segundo plano.";
-        await failAnalysisJob(session.username, job.id, message);
-      }
+      await dispatchWorker(origin, job.id);
     });
 
     return NextResponse.json({ job }, { status: 202 });
@@ -152,7 +138,10 @@ export async function DELETE() {
     const session = await requireAuthenticatedSession();
     const dashboardState = await getDashboardState(session.username);
 
-    if (dashboardState.activeJob?.status === "running") {
+    if (
+      dashboardState.activeJob?.status === "running" ||
+      dashboardState.activeJob?.status === "queued"
+    ) {
       return NextResponse.json(
         { error: "Existe uma análise em andamento. Aguarde a conclusão antes de limpar." },
         { status: 409 },

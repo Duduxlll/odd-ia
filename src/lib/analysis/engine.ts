@@ -4,7 +4,9 @@ import { DEFAULT_FILTERS, getMarketStabilityBias, resolveMarketCategory } from "
 import { reviewPicksWithOpenAI } from "@/lib/analysis/openai";
 import {
   getLatestClosingOdd,
+  getCalibrationProfile,
   getLineHistoryByCandidateIds,
+  rebuildCalibrationProfile,
   getTrackedPicksForRefresh,
   saveAnalysisRun,
   updatePickLifecycle,
@@ -12,7 +14,6 @@ import {
 import { env } from "@/lib/env";
 import {
   fetchFixtureStatistics,
-  fetchFixturesByDate,
   fetchFixturesByIds,
   fetchFixturesByVenue,
   fetchHeadToHead,
@@ -20,13 +21,13 @@ import {
   fetchLeagueRecentFixtures,
   fetchLineups,
   fetchNextFixtures,
-  fetchOddsByFixture,
   fetchPredictions,
   fetchRecentFixtures,
   fetchStandings,
   fetchTeamPlayers,
   fetchTeamStatistics,
 } from "@/lib/providers/api-football";
+import { getCachedFixturesByDate, getCachedOddsByFixture } from "@/lib/prefetch";
 import { fetchWeatherSnapshot } from "@/lib/providers/weather";
 import type {
   AnalysisSection,
@@ -42,6 +43,8 @@ import type {
   ApiFootballPrediction,
   ApiFootballStandingEntry,
   ApiFootballTeamStatistics,
+  CalibrationBucket,
+  CalibrationProfile,
   ClvSnapshot,
   LineMovementSnapshot,
   MarketCategoryId,
@@ -1660,7 +1663,7 @@ function resolveXgSource(homeProfile: TeamProfile, awayProfile: TeamProfile): Xg
   return "mixed";
 }
 
-function scoreCandidate(candidate: EnrichedCandidate): AnalysisPick {
+function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationProfile | null): AnalysisPick {
   const presentation = buildMarketPresentation(candidate);
   const lineMovement = buildLineMovement(candidate);
   const implied = 1 / candidate.bestOdd;
@@ -1934,7 +1937,40 @@ function scoreCandidate(candidate: EnrichedCandidate): AnalysisPick {
   if (homeProfile.structuralAbsences.length + awayProfile.structuralAbsences.length >= 2) modelProbability -= 0.008;
   if (candidate.marketCategory === "players" && !lineupsReady) modelProbability -= 0.012;
 
+  const calibrationNotes: string[] = [];
+  const calibrationAdjustments = [
+    calibration?.overall ?? null,
+    calibration?.byMarket[candidate.marketCategory] ?? null,
+    calibration?.byLeague[String(candidate.leagueId)] ?? null,
+  ].filter((bucket): bucket is CalibrationBucket => Boolean(bucket));
+  const probabilityCalibration = calibrationAdjustments.reduce(
+    (total, bucket) => total + bucket.probabilityDelta,
+    0,
+  );
+  const confidenceCalibration = calibrationAdjustments.reduce(
+    (total, bucket) => total + bucket.confidenceDelta,
+    0,
+  );
+  const riskCalibration = calibrationAdjustments.reduce(
+    (total, bucket) => total + bucket.riskDelta,
+    0,
+  );
+
+  if (calibrationAdjustments.length) {
+    const strongest = calibrationAdjustments.reduce((best, current) =>
+      Math.abs(current.confidenceDelta) > Math.abs(best.confidenceDelta) ? current : best,
+    );
+    if (Math.abs(strongest.confidenceDelta) >= 0.5) {
+      calibrationNotes.push(
+        strongest.confidenceDelta > 0
+          ? `A calibracao historica desse recorte reforca a confiança com base em ${strongest.sampleSize} amostras.`
+          : `A calibracao historica desse recorte pede mais cautela com base em ${strongest.sampleSize} amostras.`,
+      );
+    }
+  }
+
   modelProbability = clamp(modelProbability, 0.08, 0.92);
+  modelProbability = clamp(modelProbability + probabilityCalibration, 0.08, 0.92);
   const fairOdd = 1 / modelProbability;
   const edge = modelProbability - implied;
   const expectedValue = candidate.bestOdd * modelProbability - 1;
@@ -1945,7 +1981,8 @@ function scoreCandidate(candidate: EnrichedCandidate): AnalysisPick {
       (candidate.marketCategory === "players" ? 0.1 : 0) +
       (candidate.marketCategory === "cards" ? 0.06 : 0) +
       weatherFlags.caution.length * 0.025 +
-      (homeProfile.structuralAbsences.length + awayProfile.structuralAbsences.length) * 0.02,
+      (homeProfile.structuralAbsences.length + awayProfile.structuralAbsences.length) * 0.02 +
+      riskCalibration,
     0.08,
     0.84,
   );
@@ -1954,7 +1991,8 @@ function scoreCandidate(candidate: EnrichedCandidate): AnalysisPick {
       edge * 105 +
       quality * 16 -
       riskScore * 21 +
-      candidate.sportsbookCount * 1.2,
+      candidate.sportsbookCount * 1.2 +
+      confidenceCalibration,
     18,
     97,
   );
@@ -1999,6 +2037,7 @@ function scoreCandidate(candidate: EnrichedCandidate): AnalysisPick {
         ? `${candidate.homeTeam} cria ${homeProfile.recent10.xgAvg.toFixed(2)} xG/j; ${candidate.awayTeam} cria ${awayProfile.recent10.xgAvg.toFixed(2)} xG/j no recorte recente.`
         : null,
       advancedFeedAvailable ? `${candidate.homeTeam} e ${candidate.awayTeam} tiveram boa cobertura de stats de processo nos jogos recentes.` : "PPDA/xT nao vieram no feed atual; a leitura de estilo usa proxies de territorio e circulacao.",
+      ...calibrationNotes,
     ]),
     toneSection("style", "Estilo de jogo", "neutral", [
       homeProfile.styleTags.length ? `${candidate.homeTeam}: ${homeProfile.styleTags.join(", ")}.` : null,
@@ -2703,11 +2742,12 @@ export async function runFootballAnalysis(
 
   await reportProgress("Atualizando o histórico de picks e validando o radar.");
   await refreshHistoricalPickTracking().catch(() => null);
+  const calibration = await rebuildCalibrationProfile(username).catch(() => getCalibrationProfile(username));
 
   const filters = normalizeFilters(rawFilters);
   const dates = getScanDates(filters.scanDate, filters.horizonHours);
   await reportProgress("Buscando fixtures e montando a janela elegível.");
-  const fixturesByDate = await Promise.all(dates.map((date) => fetchFixturesByDate(date)));
+  const fixturesByDate = await Promise.all(dates.map((date) => getCachedFixturesByDate(date)));
   const fixtures = fixturesByDate.flat();
   const eligibleFixtures = filterEligibleFixtures(fixtures, filters);
   const baseFixtureBudget = Math.min(
@@ -2723,7 +2763,7 @@ export async function runFootballAnalysis(
     fixturesForOdds,
     env.API_FOOTBALL_FREE_PLAN_MODE ? 1 : env.API_FOOTBALL_ODDS_CONCURRENCY,
     async (fixture) => {
-      const response = await fetchOddsByFixture(
+      const response = await getCachedOddsByFixture(
         fixture.fixture.id,
         env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER
           ? env.API_FOOTBALL_PRIMARY_BOOKMAKER_ID
@@ -2760,7 +2800,7 @@ export async function runFootballAnalysis(
     (candidate) => enrichCandidate(candidate, getFixtureContext),
   );
   let picks = enriched
-    .map(scoreCandidate)
+    .map((candidate) => scoreCandidate(candidate, calibration))
     .filter((pick) => pick.expectedValue > -0.03)
     .sort((left, right) => right.confidence - left.confidence || right.edge - left.edge)
     .slice(0, filters.pickCount);
@@ -2817,6 +2857,8 @@ export async function runFootballAnalysis(
   if (env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER) {
     run.systemNote = `${run.systemNote} Odds focadas exclusivamente em ${env.API_FOOTBALL_PRIMARY_BOOKMAKER_NAME}.`;
   }
+
+  run.systemNote = `${run.systemNote} Worker dedicado, pré-coleta contínua de fixtures/odds e calibração histórica do modelo estão ativos.`;
 
   await reportProgress("Persistindo a rodada e fechando o scan.");
   await saveAnalysisRun(

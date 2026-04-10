@@ -3,16 +3,18 @@ import {
   ensureSchema,
   getDashboardState,
   getLatestAnalysisRun,
+  getOperationsStatus,
   getPerformanceSummary,
 } from "@/lib/db";
 import { getConfigStatus } from "@/lib/env";
 
 export async function getDashboardSnapshot(username: string) {
   await ensureSchema();
-  const [latestRun, performance, dashboardState] = await Promise.all([
+  const [latestRun, performance, dashboardState, operations] = await Promise.all([
     getLatestAnalysisRun(username),
     getPerformanceSummary(username),
     getDashboardState(username),
+    getOperationsStatus(username),
   ]);
 
   return {
@@ -20,6 +22,7 @@ export async function getDashboardSnapshot(username: string) {
     latestRun,
     activeJob: dashboardState.activeJob,
     performance,
+    operations,
     draftFilters: dashboardState.draftFilters ?? latestRun?.filters ?? DEFAULT_FILTERS,
     defaultFilters: DEFAULT_FILTERS,
     supportedLeagues: TOP_FOOTBALL_LEAGUES,

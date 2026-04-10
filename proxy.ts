@@ -4,7 +4,12 @@ import type { NextRequest } from "next/server";
 import { getSessionFromRequest, isAuthConfigured } from "@/lib/auth";
 
 const PUBLIC_PATHS = new Set(["/login"]);
-const PUBLIC_API_PREFIXES = ["/api/auth/login", "/api/auth/logout"];
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/internal/worker",
+  "/api/internal/prefetch",
+];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

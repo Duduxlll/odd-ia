@@ -51,7 +51,8 @@ export function DashboardShell({
   const [isClearing, setIsClearing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-  const isAnalyzing = isSubmittingAnalysis || activeJob?.status === "running";
+  const isActiveJobPending = activeJob?.status === "queued" || activeJob?.status === "running";
+  const isAnalyzing = isSubmittingAnalysis || isActiveJobPending;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,7 +76,7 @@ export function DashboardShell({
   }, [filters]);
 
   useEffect(() => {
-    if (activeJob?.status !== "running") {
+    if (!isActiveJobPending) {
       if (activeJob?.status === "failed" && activeJob.error) {
         setError(activeJob.error);
       }
@@ -111,7 +112,7 @@ export function DashboardShell({
           setSystemNote(payload.latestRun.systemNote);
         }
 
-        if (payload.activeJob?.status === "running") {
+        if (payload.activeJob?.status === "running" || payload.activeJob?.status === "queued") {
           setFilters(payload.activeJob.filters);
           setError(null);
         } else if (payload.draftFilters) {
@@ -143,7 +144,7 @@ export function DashboardShell({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [activeJob?.error, activeJob?.id, activeJob?.status]);
+  }, [activeJob?.error, activeJob?.id, activeJob?.status, isActiveJobPending]);
 
   async function handleAnalyze() {
     setError(null);
@@ -160,7 +161,11 @@ export function DashboardShell({
         throw new Error(payload.error || "Falha ao executar a análise.");
       }
       setActiveJob(payload.job);
-      setSystemNote("Scan em andamento. Você pode atualizar a página que o processo continua.");
+      setSystemNote(
+        payload.job.status === "queued"
+          ? "Job enfileirado. O worker vai assumir o scan em instantes."
+          : "Scan em andamento. Você pode atualizar a página que o processo continua.",
+      );
       router.refresh();
     } catch (caughtError) {
       setError(
@@ -310,7 +315,7 @@ export function DashboardShell({
           <PanelCard
             title="Resumo executivo"
             subtitle={
-              activeJob?.status === "running"
+              isActiveJobPending
                 ? `Scan iniciado em ${formatDateTimeInSaoPaulo(activeJob.createdAt)}`
                 : run
                 ? `Última execução em ${formatDateTimeInSaoPaulo(run.createdAt)}`
@@ -318,11 +323,12 @@ export function DashboardShell({
             }
             icon={Gauge}
           >
-            {activeJob?.status === "running" ? (
+            {isActiveJobPending ? (
               <div className="space-y-4">
                 <p className="max-w-3xl text-sm leading-7 text-slate-300">
-                  O scan está em andamento com os filtros atuais. Você pode atualizar a página,
-                  e o radar continua processando até gravar a rodada completa.
+                  {activeJob?.status === "queued"
+                    ? "O job já foi salvo na fila com os filtros atuais. Assim que o worker assumir, o scan continua sozinho até gravar a rodada completa."
+                    : "O scan está em andamento com os filtros atuais. Você pode atualizar a página, e o radar continua processando até gravar a rodada completa."}
                 </p>
                 <AlertBlock tone="amber" message={activeJob.message} />
                 {error ? <AlertBlock tone="rose" message={error} /> : null}
@@ -549,6 +555,42 @@ export function DashboardShell({
                 }))}
               />
             </div>
+          </div>
+        </PanelCard>
+
+        <PanelCard
+          title="Infra premium"
+          subtitle="Worker, pré-coleta e calibração que sustentam a qualidade"
+          icon={ShieldAlert}
+        >
+          <div className="grid gap-4 xl:grid-cols-3">
+            <ValidationMetric
+              label="Worker"
+              value={`${initialSnapshot.operations.worker.queuedJobs} fila / ${initialSnapshot.operations.worker.runningJobs} rodando`}
+              detail={
+                initialSnapshot.operations.worker.lastCompletedAt
+                  ? `última conclusão ${formatDateTimeInSaoPaulo(initialSnapshot.operations.worker.lastCompletedAt)}`
+                  : "sem conclusão recente ainda"
+              }
+            />
+            <ValidationMetric
+              label="Pré-coleta"
+              value={`${initialSnapshot.operations.prefetch.fixtureEntries} fixtures / ${initialSnapshot.operations.prefetch.oddsEntries} odds`}
+              detail={
+                initialSnapshot.operations.prefetch.lastOddsAt
+                  ? `odds aquecidas em ${formatDateTimeInSaoPaulo(initialSnapshot.operations.prefetch.lastOddsAt)}`
+                  : "cache ainda aquecendo"
+              }
+            />
+            <ValidationMetric
+              label="Calibração"
+              value={`${initialSnapshot.operations.calibration.sampleSize} amostras`}
+              detail={
+                initialSnapshot.operations.calibration.updatedAt
+                  ? `perfil atualizado em ${formatDateTimeInSaoPaulo(initialSnapshot.operations.calibration.updatedAt)}`
+                  : "modelo ainda sem base suficiente"
+              }
+            />
           </div>
         </PanelCard>
 

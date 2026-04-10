@@ -31,6 +31,7 @@ AUTH_USERNAME=...
 AUTH_PASSWORD=...
 AUTH_USERS_JSON=
 AUTH_SECRET=...
+CRON_SECRET=...
 OPENAI_API_KEY=...
 API_FOOTBALL_KEY=...
 API_FOOTBALL_ODDS_MAX_PAGE=12
@@ -60,6 +61,7 @@ Abra `http://localhost:3000`.
 
 - Se o `Turso` não estiver configurado, o app usa um banco local `libSQL` em arquivo para não travar o desenvolvimento.
 - O acesso ao painel depende de `AUTH_SECRET` e de pelo menos um login configurado. Você pode usar `AUTH_USERNAME` + `AUTH_PASSWORD` para 1 usuário, ou `AUTH_USERS_JSON` para vários usuários.
+- Para o worker e os crons da Vercel funcionarem com segurança, defina `CRON_SECRET` na Vercel e no `.env.local`. Pode usar o mesmo valor de `AUTH_SECRET` se quiser simplificar.
 - Exemplo de múltiplos logins:
 
 ```env
@@ -70,5 +72,6 @@ AUTH_USERS_JSON=[{"username":"dudu","password":"senha-forte-1"},{"username":"ana
 - O preset atual já está ajustado para plano `Pro`, com scan mais profundo, shortlist maior e contexto completo.
 - O radar pode operar travado em uma casa específica, mas o preset atual já vem em `multi-casa` para não limitar a cobertura das odds.
 - Se você voltar para o plano grátis, troque para `API_FOOTBALL_FREE_PLAN_MODE=true`, reduza `API_FOOTBALL_MAX_FIXTURES_PER_SCAN` e mantenha `API_FOOTBALL_ODDS_MAX_PAGE=3`.
+- O deploy atual já vem pronto para `Fluid Compute`, worker interno e pré-coleta via cron em `/api/internal/worker` e `/api/internal/prefetch`.
 # odd-ia
 # odd-ia
