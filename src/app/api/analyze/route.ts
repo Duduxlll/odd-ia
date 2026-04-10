@@ -18,7 +18,7 @@ import {
 } from "@/lib/db";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 const filtersSchema = z.object({
   scanDate: z.string().min(10),

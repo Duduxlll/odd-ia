@@ -2700,7 +2700,6 @@ export async function runFootballAnalysis(
   const reportProgress = async (message: string) => {
     await options?.onProgress?.(message);
   };
-  const isHostedRuntime = Boolean(process.env.VERCEL);
 
   await reportProgress("Atualizando o histórico de picks e validando o radar.");
   await refreshHistoricalPickTracking().catch(() => null);
@@ -2717,18 +2716,12 @@ export async function runFootballAnalysis(
       ? Math.max(1, env.API_FOOTBALL_MAX_FIXTURES_PER_SCAN)
       : Math.max(env.API_FOOTBALL_MAX_FIXTURES_PER_SCAN, filters.pickCount * 3),
   );
-  const fixtureBudget = isHostedRuntime
-    ? Math.min(baseFixtureBudget, Math.max(8, Math.min(14, filters.pickCount + 4)))
-    : baseFixtureBudget;
+  const fixtureBudget = baseFixtureBudget;
   const fixturesForOdds = selectFixturesForOdds(eligibleFixtures, filters, fixtureBudget);
   await reportProgress(`Consultando odds em ${fixturesForOdds.length} fixtures priorizadas.`);
   const oddsByFixture = await mapLimit(
     fixturesForOdds,
-    env.API_FOOTBALL_FREE_PLAN_MODE
-      ? 1
-      : isHostedRuntime
-        ? Math.min(4, env.API_FOOTBALL_ODDS_CONCURRENCY)
-        : env.API_FOOTBALL_ODDS_CONCURRENCY,
+    env.API_FOOTBALL_FREE_PLAN_MODE ? 1 : env.API_FOOTBALL_ODDS_CONCURRENCY,
     async (fixture) => {
       const response = await fetchOddsByFixture(
         fixture.fixture.id,
@@ -2757,19 +2750,13 @@ export async function runFootballAnalysis(
         Math.max(filters.pickCount * 4, 32),
         Math.max(32, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
       );
-  const seedVolume = isHostedRuntime
-    ? Math.min(baseSeedVolume, Math.max(18, Math.min(28, filters.pickCount * 2)))
-    : baseSeedVolume;
+  const seedVolume = baseSeedVolume;
   const seeded = rawCandidates.slice(0, seedVolume);
   const getFixtureContext = createFixtureContextLoader(filters);
   await reportProgress(`Aprofundando contexto em ${seeded.length} mercados candidatos.`);
   const enriched = await mapLimit(
     seeded,
-    env.API_FOOTBALL_FREE_PLAN_MODE
-      ? 1
-      : isHostedRuntime
-        ? Math.min(3, env.API_FOOTBALL_CONTEXT_CONCURRENCY)
-        : env.API_FOOTBALL_CONTEXT_CONCURRENCY,
+    env.API_FOOTBALL_FREE_PLAN_MODE ? 1 : env.API_FOOTBALL_CONTEXT_CONCURRENCY,
     (candidate) => enrichCandidate(candidate, getFixtureContext),
   );
   let picks = enriched

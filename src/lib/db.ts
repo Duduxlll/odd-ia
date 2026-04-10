@@ -26,7 +26,7 @@ const PICKS_TABLE = "radar_analysis_picks";
 const SNAPSHOTS_TABLE = "radar_market_snapshots";
 const STATE_TABLE = "radar_dashboard_state";
 const JOBS_TABLE = "radar_analysis_jobs";
-const VERCEL_ANALYSIS_STALE_MS = 8 * 60 * 1000;
+const VERCEL_ANALYSIS_STALE_MS = 15 * 60 * 1000;
 const LOCAL_ANALYSIS_STALE_MS = 30 * 60 * 1000;
 
 let schemaPromise: Promise<void> | null = null;
