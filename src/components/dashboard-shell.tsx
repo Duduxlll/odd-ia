@@ -18,6 +18,7 @@ import { ControlPanel } from "@/components/control-panel";
 import { HeroPanel } from "@/components/hero-panel";
 import { PanelCard } from "@/components/panel-card";
 import { PickCard } from "@/components/pick-card";
+import { normalizeAnalysisFilters } from "@/lib/constants";
 import type {
   AnalysisFilters,
   AnalysisJob,
@@ -35,11 +36,12 @@ export function DashboardShell({
   currentUsername: string;
 }) {
   const router = useRouter();
-  const initialFilters =
+  const initialFilters = normalizeAnalysisFilters(
     initialSnapshot.activeJob?.filters ??
-    initialSnapshot.draftFilters ??
-    initialSnapshot.latestRun?.filters ??
-    initialSnapshot.defaultFilters;
+      initialSnapshot.draftFilters ??
+      initialSnapshot.latestRun?.filters ??
+      initialSnapshot.defaultFilters,
+  );
   const [filters, setFilters] = useState<AnalysisFilters>(initialFilters);
   const [run, setRun] = useState<AnalysisRun | null>(initialSnapshot.latestRun);
   const [activeJob, setActiveJob] = useState<AnalysisJob | null>(initialSnapshot.activeJob);
@@ -113,10 +115,10 @@ export function DashboardShell({
         }
 
         if (payload.activeJob?.status === "running" || payload.activeJob?.status === "queued") {
-          setFilters(payload.activeJob.filters);
+          setFilters(normalizeAnalysisFilters(payload.activeJob.filters));
           setError(null);
         } else if (payload.draftFilters) {
-          setFilters(payload.draftFilters);
+          setFilters(normalizeAnalysisFilters(payload.draftFilters));
         }
 
         if (payload.activeJob?.status === "failed") {
@@ -191,7 +193,7 @@ export function DashboardShell({
       }
       setRun(null);
       setActiveJob(null);
-      setFilters(payload.filters ?? initialSnapshot.defaultFilters);
+      setFilters(normalizeAnalysisFilters(payload.filters ?? initialSnapshot.defaultFilters));
       setSystemNote(null);
       router.refresh();
     } catch (caughtError) {

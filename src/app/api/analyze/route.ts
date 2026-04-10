@@ -3,7 +3,11 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
-import { DEFAULT_FILTERS, SUPPORTED_MARKETS } from "@/lib/constants";
+import {
+  DEFAULT_FILTERS,
+  SUPPORTED_MARKETS,
+  normalizeAnalysisFilters,
+} from "@/lib/constants";
 import type { MarketCategoryId } from "@/lib/types";
 import {
   clearAnalysisHistory,
@@ -68,7 +72,7 @@ export async function GET() {
 
     return NextResponse.json({
       activeJob: dashboardState.activeJob,
-      draftFilters: dashboardState.draftFilters ?? DEFAULT_FILTERS,
+      draftFilters: normalizeAnalysisFilters(dashboardState.draftFilters ?? DEFAULT_FILTERS),
       latestRun,
     });
   } catch (error) {

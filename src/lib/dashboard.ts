@@ -1,4 +1,9 @@
-import { DEFAULT_FILTERS, SUPPORTED_MARKETS, TOP_FOOTBALL_LEAGUES } from "@/lib/constants";
+import {
+  DEFAULT_FILTERS,
+  SUPPORTED_MARKETS,
+  TOP_FOOTBALL_LEAGUES,
+  normalizeAnalysisFilters,
+} from "@/lib/constants";
 import {
   ensureSchema,
   getDashboardState,
@@ -39,7 +44,9 @@ export async function getDashboardSnapshot(username: string) {
     activeJob: dashboardState.activeJob,
     performance,
     operations,
-    draftFilters: dashboardState.draftFilters ?? latestRun?.filters ?? DEFAULT_FILTERS,
+    draftFilters: normalizeAnalysisFilters(
+      dashboardState.draftFilters ?? latestRun?.filters ?? DEFAULT_FILTERS,
+    ),
     defaultFilters: DEFAULT_FILTERS,
     supportedLeagues: mergedLeagues,
     supportedBookmakers: allBookmakers,

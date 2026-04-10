@@ -124,6 +124,32 @@ export const DEFAULT_FILTERS: AnalysisFilters = {
   includeSameGame: false,
 };
 
+export function normalizeAnalysisFilters(
+  filters?: Partial<AnalysisFilters> | null,
+): AnalysisFilters {
+  return {
+    ...DEFAULT_FILTERS,
+    ...filters,
+    leagueIds: Array.isArray(filters?.leagueIds)
+      ? filters.leagueIds
+      : DEFAULT_FILTERS.leagueIds,
+    bookmakerIds: Array.isArray(filters?.bookmakerIds)
+      ? filters.bookmakerIds
+      : DEFAULT_FILTERS.bookmakerIds,
+    marketCategories: Array.isArray(filters?.marketCategories)
+      ? filters.marketCategories
+      : DEFAULT_FILTERS.marketCategories,
+    useWebSearch:
+      typeof filters?.useWebSearch === "boolean"
+        ? filters.useWebSearch
+        : DEFAULT_FILTERS.useWebSearch,
+    includeSameGame:
+      typeof filters?.includeSameGame === "boolean"
+        ? filters.includeSameGame
+        : DEFAULT_FILTERS.includeSameGame,
+  };
+}
+
 export const VERDICT_COPY: Record<
   string,
   { label: string; tone: string; accent: string }

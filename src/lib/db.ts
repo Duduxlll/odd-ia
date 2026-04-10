@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 
-import { DEFAULT_FILTERS } from "@/lib/constants";
+import { DEFAULT_FILTERS, normalizeAnalysisFilters } from "@/lib/constants";
 import type {
   AnalysisFilters,
   AnalysisJob,
@@ -145,7 +145,7 @@ function mapJobRow(row: Record<string, unknown>): AnalysisJob {
     status: String(row.status) as AnalysisJob["status"],
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
-    filters: parseJson<AnalysisFilters>(row.filters_json, DEFAULT_FILTERS),
+    filters: normalizeAnalysisFilters(parseJson<AnalysisFilters>(row.filters_json, DEFAULT_FILTERS)),
     message: String(row.message),
     error: row.error_text ? String(row.error_text) : null,
   };
@@ -602,7 +602,9 @@ export async function getDashboardState(username: string) {
 
   const stateRow = stateResult.rows[0] as Record<string, unknown> | undefined;
   const draftFilters = stateRow
-    ? parseJson<AnalysisFilters>(stateRow.draft_filters_json, DEFAULT_FILTERS)
+    ? normalizeAnalysisFilters(
+        parseJson<AnalysisFilters>(stateRow.draft_filters_json, DEFAULT_FILTERS),
+      )
     : DEFAULT_FILTERS;
   const activeJobId = stateRow?.active_job_id ? String(stateRow.active_job_id) : null;
 
@@ -864,7 +866,7 @@ export async function getLatestAnalysisRun(username: string) {
   return {
     id: String(row.id),
     createdAt: String(row.created_at),
-    filters: parseJson(row.filters_json, DEFAULT_FILTERS),
+    filters: normalizeAnalysisFilters(parseJson(row.filters_json, DEFAULT_FILTERS)),
     fixturesScanned: numberValue(row.fixtures_scanned),
     candidatesScanned: numberValue(row.candidates_scanned),
     executiveSummary: String(row.executive_summary),
