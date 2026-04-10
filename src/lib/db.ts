@@ -170,6 +170,23 @@ function getAnalysisStaleWindowMs() {
   return process.env.VERCEL ? VERCEL_ANALYSIS_STALE_MS : LOCAL_ANALYSIS_STALE_MS;
 }
 
+async function withWriteTransaction<T>(callback: (transaction: Awaited<ReturnType<typeof db.transaction>>) => Promise<T>) {
+  const transaction = await db.transaction("write");
+
+  try {
+    const result = await callback(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    if (!transaction.closed) {
+      await transaction.rollback().catch(() => null);
+    }
+    throw error;
+  } finally {
+    transaction.close();
+  }
+}
+
 function isJobStale(updatedAt: string) {
   const updatedAtMs = new Date(updatedAt).getTime();
   if (!Number.isFinite(updatedAtMs)) {
@@ -416,166 +433,168 @@ export async function saveAnalysisRun(
 ) {
   await ensureSchema();
 
-  await db.execute({
-    sql: `
-      INSERT INTO ${RUNS_TABLE} (
-        id,
-        username,
-        created_at,
-        filters_json,
-        fixtures_scanned,
-        candidates_scanned,
-        executive_summary,
-        system_note,
-        accumulator_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    args: [
-      run.id,
-      username,
-      run.createdAt,
-      JSON.stringify(run.filters),
-      run.fixturesScanned,
-      run.candidatesScanned,
-      run.executiveSummary,
-      run.systemNote,
-      JSON.stringify(run.accumulator),
-    ],
-  });
-
-  for (const pick of run.picks) {
-    await db.execute({
+  await withWriteTransaction(async (transaction) => {
+    await transaction.execute({
       sql: `
-        INSERT INTO ${PICKS_TABLE} (
+        INSERT INTO ${RUNS_TABLE} (
           id,
-          run_id,
           username,
-          candidate_id,
-          fixture_id,
-          fixture_label,
-          fixture_date,
-          league_id,
-          league_name,
-          league_country,
-          home_team,
-          away_team,
-          market_id,
-          market_name,
-          market_category,
-          selection,
-          selection_key,
-          best_odd,
-          consensus_odd,
-          sportsbook_count,
-          bookmaker,
-          bookmaker_pool_json,
-          implied_probability,
-          model_probability,
-          fair_odd,
-          edge,
-          expected_value,
-          confidence,
-          risk_score,
-          data_quality_score,
-          xg_context_json,
-          line_movement_json,
-          clv_json,
-          tracking_json,
-          referee_stats_json,
-          lineup_status,
-          prediction_pulse,
-          summary,
-          reasons_json,
-          cautions_json,
-          analysis_sections_json,
-          news_note,
-          ai_verdict,
-          ai_confidence_label,
-          created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          created_at,
+          filters_json,
+          fixtures_scanned,
+          candidates_scanned,
+          executive_summary,
+          system_note,
+          accumulator_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       args: [
-        `${run.id}:${pick.candidateId}`,
         run.id,
         username,
-        pick.candidateId,
-        pick.fixtureId,
-        pick.fixtureLabel,
-        pick.fixtureDate,
-        pick.leagueId,
-        pick.leagueName,
-        pick.leagueCountry,
-        pick.homeTeam,
-        pick.awayTeam,
-        pick.marketId,
-        pick.marketName,
-        pick.marketCategory,
-        pick.selection,
-        pick.selectionKey,
-        pick.bestOdd,
-        pick.consensusOdd,
-        pick.sportsbookCount,
-        pick.bookmaker,
-        JSON.stringify(pick.bookmakerPool),
-        pick.impliedProbability,
-        pick.modelProbability,
-        pick.fairOdd,
-        pick.edge,
-        pick.expectedValue,
-        pick.confidence,
-        pick.riskScore,
-        pick.dataQualityScore,
-        JSON.stringify(pick.xgContext),
-        JSON.stringify(pick.lineMovement),
-        JSON.stringify(pick.clv),
-        JSON.stringify(pick.tracking),
-        JSON.stringify(pick.refereeStats),
-        pick.lineupStatus,
-        pick.predictionPulse,
-        pick.summary,
-        JSON.stringify(pick.reasons),
-        JSON.stringify(pick.cautions),
-        JSON.stringify(pick.analysisSections),
-        pick.newsNote,
-        pick.aiVerdict,
-        pick.aiConfidenceLabel,
         run.createdAt,
+        JSON.stringify(run.filters),
+        run.fixturesScanned,
+        run.candidatesScanned,
+        run.executiveSummary,
+        run.systemNote,
+        JSON.stringify(run.accumulator),
       ],
     });
-  }
 
-  for (const snapshot of marketSnapshots) {
-    await db.execute({
-      sql: `
-        INSERT INTO ${SNAPSHOTS_TABLE} (
-          id,
-          run_id,
-          candidate_id,
-          fixture_id,
-          market_name,
-          selection,
-          bookmaker,
-          best_odd,
-          consensus_odd,
-          sportsbook_count,
-          observed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        `${run.id}:${snapshot.candidateId}`,
-        run.id,
-        snapshot.candidateId,
-        snapshot.fixtureId,
-        snapshot.marketName,
-        snapshot.selection,
-        snapshot.bookmaker,
-        snapshot.bestOdd,
-        snapshot.consensusOdd,
-        snapshot.sportsbookCount,
-        run.createdAt,
-      ],
-    });
-  }
+    for (const pick of run.picks) {
+      await transaction.execute({
+        sql: `
+          INSERT INTO ${PICKS_TABLE} (
+            id,
+            run_id,
+            username,
+            candidate_id,
+            fixture_id,
+            fixture_label,
+            fixture_date,
+            league_id,
+            league_name,
+            league_country,
+            home_team,
+            away_team,
+            market_id,
+            market_name,
+            market_category,
+            selection,
+            selection_key,
+            best_odd,
+            consensus_odd,
+            sportsbook_count,
+            bookmaker,
+            bookmaker_pool_json,
+            implied_probability,
+            model_probability,
+            fair_odd,
+            edge,
+            expected_value,
+            confidence,
+            risk_score,
+            data_quality_score,
+            xg_context_json,
+            line_movement_json,
+            clv_json,
+            tracking_json,
+            referee_stats_json,
+            lineup_status,
+            prediction_pulse,
+            summary,
+            reasons_json,
+            cautions_json,
+            analysis_sections_json,
+            news_note,
+            ai_verdict,
+            ai_confidence_label,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        args: [
+          `${run.id}:${pick.candidateId}`,
+          run.id,
+          username,
+          pick.candidateId,
+          pick.fixtureId,
+          pick.fixtureLabel,
+          pick.fixtureDate,
+          pick.leagueId,
+          pick.leagueName,
+          pick.leagueCountry,
+          pick.homeTeam,
+          pick.awayTeam,
+          pick.marketId,
+          pick.marketName,
+          pick.marketCategory,
+          pick.selection,
+          pick.selectionKey,
+          pick.bestOdd,
+          pick.consensusOdd,
+          pick.sportsbookCount,
+          pick.bookmaker,
+          JSON.stringify(pick.bookmakerPool),
+          pick.impliedProbability,
+          pick.modelProbability,
+          pick.fairOdd,
+          pick.edge,
+          pick.expectedValue,
+          pick.confidence,
+          pick.riskScore,
+          pick.dataQualityScore,
+          JSON.stringify(pick.xgContext),
+          JSON.stringify(pick.lineMovement),
+          JSON.stringify(pick.clv),
+          JSON.stringify(pick.tracking),
+          JSON.stringify(pick.refereeStats),
+          pick.lineupStatus,
+          pick.predictionPulse,
+          pick.summary,
+          JSON.stringify(pick.reasons),
+          JSON.stringify(pick.cautions),
+          JSON.stringify(pick.analysisSections),
+          pick.newsNote,
+          pick.aiVerdict,
+          pick.aiConfidenceLabel,
+          run.createdAt,
+        ],
+      });
+    }
+
+    for (const snapshot of marketSnapshots) {
+      await transaction.execute({
+        sql: `
+          INSERT INTO ${SNAPSHOTS_TABLE} (
+            id,
+            run_id,
+            candidate_id,
+            fixture_id,
+            market_name,
+            selection,
+            bookmaker,
+            best_odd,
+            consensus_odd,
+            sportsbook_count,
+            observed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        args: [
+          `${run.id}:${snapshot.candidateId}`,
+          run.id,
+          snapshot.candidateId,
+          snapshot.fixtureId,
+          snapshot.marketName,
+          snapshot.selection,
+          snapshot.bookmaker,
+          snapshot.bestOdd,
+          snapshot.consensusOdd,
+          snapshot.sportsbookCount,
+          run.createdAt,
+        ],
+      });
+    }
+  });
 }
 
 export async function saveDraftFilters(username: string, filters: AnalysisFilters) {
@@ -1607,37 +1626,52 @@ export async function listKnownAnalysisUsers() {
 export async function clearAnalysisHistory(username: string) {
   await ensureSchema();
 
-  await db.execute({
-    sql: `
-      DELETE FROM ${SNAPSHOTS_TABLE}
-      WHERE run_id IN (
+  await withWriteTransaction(async (transaction) => {
+    const runIdsResult = await transaction.execute({
+      sql: `
         SELECT id
         FROM ${RUNS_TABLE}
         WHERE username = ? OR username = ''
-      )
-    `,
-    args: [username],
-  });
-  await db.execute({
-    sql: `DELETE FROM ${PICKS_TABLE} WHERE username = ? OR username = ''`,
-    args: [username],
-  });
-  await db.execute({
-    sql: `DELETE FROM ${RUNS_TABLE} WHERE username = ? OR username = ''`,
-    args: [username],
-  });
-  await db.execute({
-    sql: `
-      INSERT INTO ${STATE_TABLE} (username, draft_filters_json, active_job_id)
-      VALUES (?, ?, NULL)
-      ON CONFLICT(username) DO UPDATE SET
-        draft_filters_json = excluded.draft_filters_json,
-        active_job_id = NULL
-    `,
-    args: [username, JSON.stringify(DEFAULT_FILTERS)],
-  });
-  await db.execute({
-    sql: `DELETE FROM ${JOBS_TABLE} WHERE username = ?`,
-    args: [username],
+      `,
+      args: [username],
+    });
+
+    const runIds = runIdsResult.rows.map((row) => String((row as Record<string, unknown>).id));
+
+    for (const runIdGroup of chunkValues(runIds, 100)) {
+      const placeholders = runIdGroup.map(() => "?").join(", ");
+
+      await transaction.execute({
+        sql: `DELETE FROM ${SNAPSHOTS_TABLE} WHERE run_id IN (${placeholders})`,
+        args: runIdGroup,
+      });
+      await transaction.execute({
+        sql: `DELETE FROM ${PICKS_TABLE} WHERE run_id IN (${placeholders})`,
+        args: runIdGroup,
+      });
+    }
+
+    await transaction.execute({
+      sql: `DELETE FROM ${PICKS_TABLE} WHERE username = ? OR username = ''`,
+      args: [username],
+    });
+    await transaction.execute({
+      sql: `DELETE FROM ${RUNS_TABLE} WHERE username = ? OR username = ''`,
+      args: [username],
+    });
+    await transaction.execute({
+      sql: `DELETE FROM ${JOBS_TABLE} WHERE username = ?`,
+      args: [username],
+    });
+    await transaction.execute({
+      sql: `
+        INSERT INTO ${STATE_TABLE} (username, draft_filters_json, active_job_id)
+        VALUES (?, ?, NULL)
+        ON CONFLICT(username) DO UPDATE SET
+          draft_filters_json = excluded.draft_filters_json,
+          active_job_id = NULL
+      `,
+      args: [username, JSON.stringify(DEFAULT_FILTERS)],
+    });
   });
 }
