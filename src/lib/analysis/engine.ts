@@ -368,6 +368,15 @@ function formatLineValue(line: number | null) {
   return rounded.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 }
 
+function formatSignedLineValue(line: number | null) {
+  const formatted = formatLineValue(line);
+  if (formatted === null) {
+    return null;
+  }
+
+  return line !== null && line > 0 ? `+${formatted}` : formatted;
+}
+
 function selectionDirection(selection: string) {
   const normalized = selection.toLowerCase();
   if (normalized.startsWith("over")) return "over";
@@ -398,10 +407,25 @@ function buildMarketPresentation(candidate: RawCandidate) {
   const marketName = candidate.marketName.toLowerCase();
   const direction = selectionDirection(candidate.selection);
   const lineText = formatLineValue(candidate.lineValue);
+  const signedLineText = formatSignedLineValue(candidate.lineValue);
   const halfLabel = marketName.includes("second half") || marketName.includes("2nd half")
     ? "2º tempo"
     : "1º tempo";
   const shotUnit = marketName.includes("target") ? "chute no alvo" : "chute";
+
+  if (marketName.includes("draw no bet")) {
+    return {
+      marketName: "Empate anula aposta",
+      selection: `${candidate.selection} com empate anulando a entrada`,
+    };
+  }
+
+  if (marketName.includes("home/away")) {
+    return {
+      marketName: "Sem empate",
+      selection: candidate.selection,
+    };
+  }
 
   if (marketName.includes("total - away") && isOverUnderDirection(direction) && lineText) {
     return {
@@ -483,6 +507,15 @@ function buildMarketPresentation(candidate: RawCandidate) {
     };
   }
 
+  if (marketName.includes("handicap")) {
+    const handicapLabel = signedLineText ? `${candidate.selection} ${signedLineText}` : candidate.selection;
+
+    return {
+      marketName: marketName.includes("asian") ? "Asian handicap" : "Handicap",
+      selection: handicapLabel,
+    };
+  }
+
   if (candidate.selection === candidate.homeTeam) {
     return {
       marketName: "Resultado final",
@@ -501,16 +534,6 @@ function buildMarketPresentation(candidate: RawCandidate) {
     return {
       marketName: "Dupla chance",
       selection: candidate.selection,
-    };
-  }
-
-  if (marketName.includes("handicap")) {
-    return {
-      marketName: "Handicap",
-      selection: candidate.selection.toLowerCase().includes(candidate.homeTeam.toLowerCase()) ||
-        candidate.selection.toLowerCase().includes(candidate.awayTeam.toLowerCase())
-        ? candidate.selection
-        : `Handicap em ${candidate.selection}`,
     };
   }
 
