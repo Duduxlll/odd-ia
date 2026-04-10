@@ -118,6 +118,7 @@ export const DEFAULT_FILTERS: AnalysisFilters = {
   pickCount: 10,
   targetAccumulatorOdd: 4,
   leagueIds: TOP_FOOTBALL_LEAGUES.map((league) => league.id),
+  bookmakerIds: [],
   marketCategories: MARKET_RULES.map((rule) => rule.id),
   useWebSearch: true,
   includeSameGame: false,

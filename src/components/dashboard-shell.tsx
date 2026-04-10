@@ -259,6 +259,22 @@ export function DashboardShell({
     }));
   }
 
+  function toggleBookmaker(id: number) {
+    setFilters((current) => {
+      const nextBookmakerIds =
+        current.bookmakerIds.length === 0
+          ? [id]
+          : current.bookmakerIds.includes(id)
+            ? current.bookmakerIds.filter((bookmakerId) => bookmakerId !== id)
+            : [...current.bookmakerIds, id];
+
+      return {
+        ...current,
+        bookmakerIds: nextBookmakerIds,
+      };
+    });
+  }
+
   const picks = run?.picks ?? [];
 
   return (
@@ -299,11 +315,13 @@ export function DashboardShell({
             activeJob={activeJob}
             config={initialSnapshot.config}
             availableLeagueCount={initialSnapshot.supportedLeagues.length}
+            availableBookmakerCount={initialSnapshot.supportedBookmakers.length}
           />
           <ControlPanel
             config={initialSnapshot.config}
             filters={filters}
             leagues={initialSnapshot.supportedLeagues}
+            bookmakers={initialSnapshot.supportedBookmakers}
             markets={initialSnapshot.supportedMarkets}
             isPending={isAnalyzing}
             isClearing={isClearing}
@@ -311,6 +329,7 @@ export function DashboardShell({
             onClear={handleClear}
             onChange={setFilters}
             onToggleLeague={toggleLeague}
+            onToggleBookmaker={toggleBookmaker}
             onToggleMarket={toggleMarket}
           />
         </section>

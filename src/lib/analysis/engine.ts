@@ -245,6 +245,9 @@ function normalizeFilters(filters: Partial<AnalysisFilters> | undefined): Analys
     ...DEFAULT_FILTERS,
     ...filters,
     leagueIds: Array.isArray(filters?.leagueIds) ? filters.leagueIds : DEFAULT_FILTERS.leagueIds,
+    bookmakerIds: Array.isArray(filters?.bookmakerIds)
+      ? filters.bookmakerIds
+      : DEFAULT_FILTERS.bookmakerIds,
     marketCategories: filters?.marketCategories?.length
       ? filters.marketCategories
       : DEFAULT_FILTERS.marketCategories,
@@ -576,6 +579,10 @@ function buildCandidates(
     }
 
     for (const bookmaker of entry.bookmakers ?? []) {
+      if (filters.bookmakerIds.length && !filters.bookmakerIds.includes(bookmaker.id)) {
+        continue;
+      }
+
       for (const bet of bookmaker.bets ?? []) {
         const category = resolveMarketCategory(bet.name);
         if (!category || !filters.marketCategories.includes(category)) {
@@ -2881,6 +2888,7 @@ export async function runFootballAnalysis(
     onProgress?: (message: string) => Promise<void> | void;
   },
 ) {
+  const aiEnabled = Boolean(env.OPENAI_API_KEY);
   const reportProgress = async (message: string) => {
     await options?.onProgress?.(message);
   };
@@ -2947,34 +2955,54 @@ export async function runFootballAnalysis(
   let picks = enriched
     .map((candidate) => scoreCandidate(candidate, calibration))
     .filter((pick) => pick.expectedValue > -0.03)
-    .sort((left, right) => right.confidence - left.confidence || right.edge - left.edge)
-    .slice(0, filters.pickCount);
+    .sort((left, right) => right.confidence - left.confidence || right.edge - left.edge);
 
   let executiveSummary = picks.length
     ? `O motor encontrou ${picks.length} picks acima da linha mínima de valor dentro da faixa de odd ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
     : env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER && !oddsEntries.length
       ? `A API-Football não retornou mercados da ${bookmakerScopeLabel} para o recorte selecionado. Nesse caso, o radar não tem como montar picks mesmo com fixtures elegíveis.`
-    : rawCandidates.length
+      : rawCandidates.length
       ? `Foram encontrados mercados com odds, mas nenhum passou no corte final de valor dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
       : `Foram monitorados ${fixturesForOdds.length} fixtures com odds nesta rodada, mas nenhum mercado elegível entrou no filtro atual.`;
   await reportProgress("Pontuando valor, risco e shortlist final.");
-  const aiReview = await reviewPicksWithOpenAI(picks, filters).catch(() => null);
+  const aiReviewSeed = aiEnabled
+    ? picks.slice(0, Math.min(Math.max(filters.pickCount * 3, 12), 24))
+    : picks.slice(0, filters.pickCount);
+  const aiReview = await reviewPicksWithOpenAI(aiReviewSeed, filters).catch(() => null);
 
   if (aiReview) {
     executiveSummary = aiReview.executiveSummary;
-    picks = aiReview.picks
+    const reviewedPicks = aiReview.picks
       .map((pick) => ({
         ...pick,
         fairOdd: 1 / pick.modelProbability,
         edge: pick.modelProbability - pick.impliedProbability,
         expectedValue: pick.bestOdd * pick.modelProbability - 1,
       }))
-      .sort((left, right) => right.confidence - left.confidence || right.edge - left.edge)
-      .slice(0, filters.pickCount);
+      .sort((left, right) => {
+        const verdictWeight = {
+          strong_yes: 4,
+          yes: 3,
+          lean_yes: 2,
+          pass: 1,
+        } satisfies Record<AnalysisPick["aiVerdict"], number>;
+
+        return (
+          verdictWeight[right.aiVerdict] - verdictWeight[left.aiVerdict] ||
+          right.confidence - left.confidence ||
+          right.edge - left.edge
+        );
+      });
+
+    picks = (reviewedPicks.filter((pick) => pick.aiVerdict !== "pass").length
+      ? reviewedPicks.filter((pick) => pick.aiVerdict !== "pass")
+      : reviewedPicks
+    ).slice(0, filters.pickCount);
+  } else {
+    picks = picks.slice(0, filters.pickCount);
   }
 
   const accumulator = buildAccumulator(picks, filters.targetAccumulatorOdd, filters.includeSameGame);
-  const aiEnabled = Boolean(env.OPENAI_API_KEY);
   const webEnabled = aiEnabled && filters.useWebSearch && env.OPENAI_ENABLE_WEB_SEARCH;
 
   const run: AnalysisRun = {
@@ -2986,8 +3014,8 @@ export async function runFootballAnalysis(
     executiveSummary,
     systemNote: aiEnabled
       ? webEnabled
-        ? "Análise concluída com score estatístico e revisão por IA, incluindo checagem web quando houve contexto recente relevante."
-        : "Análise concluída com score estatístico e revisão por IA."
+        ? "Análise concluída com motor estatístico + IA como árbitra principal, incluindo checagem web quando houve contexto recente relevante."
+        : "Análise concluída com motor estatístico e IA como árbitra principal do ranking final."
       : "Análise concluída só com o motor estatístico local. Para ativar a revisão por IA, configure a OPENAI_API_KEY.",
     picks,
     accumulator,

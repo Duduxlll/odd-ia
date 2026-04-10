@@ -7,16 +7,21 @@ import {
   getPerformanceSummary,
 } from "@/lib/db";
 import { getConfigStatus } from "@/lib/env";
-import { fetchAvailableLeagues } from "@/lib/providers/api-football";
+import {
+  fetchAvailableBookmakers,
+  fetchAvailableLeagues,
+} from "@/lib/providers/api-football";
 
 export async function getDashboardSnapshot(username: string) {
   await ensureSchema();
-  const [latestRun, performance, dashboardState, operations, allLeagues] = await Promise.all([
+  const [latestRun, performance, dashboardState, operations, allLeagues, allBookmakers] =
+    await Promise.all([
     getLatestAnalysisRun(username),
     getPerformanceSummary(username),
     getDashboardState(username),
     getOperationsStatus(username),
     fetchAvailableLeagues().catch(() => TOP_FOOTBALL_LEAGUES),
+    fetchAvailableBookmakers().catch(() => []),
   ]);
 
   const priorityOrder = new Map(TOP_FOOTBALL_LEAGUES.map((league, index) => [league.id, index]));
@@ -37,6 +42,7 @@ export async function getDashboardSnapshot(username: string) {
     draftFilters: dashboardState.draftFilters ?? latestRun?.filters ?? DEFAULT_FILTERS,
     defaultFilters: DEFAULT_FILTERS,
     supportedLeagues: mergedLeagues,
+    supportedBookmakers: allBookmakers,
     supportedMarkets: SUPPORTED_MARKETS,
   };
 }

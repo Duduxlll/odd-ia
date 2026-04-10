@@ -17,6 +17,7 @@ export interface AnalysisFilters {
   pickCount: number;
   targetAccumulatorOdd: number;
   leagueIds: number[];
+  bookmakerIds: number[];
   marketCategories: MarketCategoryId[];
   useWebSearch: boolean;
   includeSameGame: boolean;
@@ -138,6 +139,12 @@ export interface SupportedLeague {
   id: number;
   name: string;
   country: string;
+  emphasis: string;
+}
+
+export interface SupportedBookmaker {
+  id: number;
+  name: string;
   emphasis: string;
 }
 
@@ -273,6 +280,7 @@ export interface DashboardSnapshot {
   draftFilters: AnalysisFilters;
   defaultFilters: AnalysisFilters;
   supportedLeagues: SupportedLeague[];
+  supportedBookmakers: SupportedBookmaker[];
   supportedMarkets: SupportedMarketCategory[];
 }
 

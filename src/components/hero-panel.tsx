@@ -109,11 +109,13 @@ export function HeroPanel({
   activeJob,
   config,
   availableLeagueCount,
+  availableBookmakerCount,
 }: {
   run: AnalysisRun | null;
   activeJob: AnalysisJob | null;
   config: ConfigStatus;
   availableLeagueCount: number;
+  availableBookmakerCount: number;
 }) {
   const jobPending = activeJob?.status === "queued" || activeJob?.status === "running";
   const filters = activeJob?.filters ?? run?.filters;
@@ -121,6 +123,11 @@ export function HeroPanel({
     ? filters.leagueIds.length
       ? `${filters.leagueIds.length} ligas ativas`
       : `todas as ${availableLeagueCount} ligas`
+    : "—";
+  const bookmakersLabel = filters
+    ? filters.bookmakerIds.length
+      ? `${filters.bookmakerIds.length} casas ativas`
+      : `todas as ${availableBookmakerCount} casas`
     : "—";
   const markets = filters?.marketCategories.length ?? 0;
   const band = filters ? `${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}` : "—";
@@ -195,6 +202,7 @@ export function HeroPanel({
 
             <div className="flex flex-wrap gap-1.5">
               <ScopePill label={leaguesLabel} />
+              <ScopePill label={bookmakersLabel} />
               <ScopePill label={`${markets} famílias`} />
               <ScopePill label={`faixa ${band}`} />
               {jobPending ? (

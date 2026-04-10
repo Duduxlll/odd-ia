@@ -1,5 +1,6 @@
 import { env } from "@/lib/env";
 import type {
+  SupportedBookmaker,
   ApiFootballFixture,
   ApiFootballFixtureStatistics,
   ApiFootballPlayer,
@@ -394,4 +395,26 @@ export async function fetchAvailableLeagues() {
       left.country.localeCompare(right.country, "pt-BR") ||
       left.name.localeCompare(right.name, "pt-BR"),
   );
+}
+
+export async function fetchAvailableBookmakers() {
+  const payload = await apiFootballFetch<Array<{ id?: number; name?: string }>>(
+    "/odds/bookmakers",
+    {},
+  );
+
+  return payload.response
+    .map((entry) => {
+      if (!entry.id || !entry.name) {
+        return null;
+      }
+
+      return {
+        id: entry.id,
+        name: entry.name,
+        emphasis: "bookmaker ativo",
+      } satisfies SupportedBookmaker;
+    })
+    .filter((bookmaker): bookmaker is SupportedBookmaker => Boolean(bookmaker))
+    .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 }

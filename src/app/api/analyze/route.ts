@@ -28,6 +28,7 @@ const filtersSchema = z.object({
   pickCount: z.number().min(1).max(25),
   targetAccumulatorOdd: z.number().min(1.1).max(40),
   leagueIds: z.array(z.number()),
+  bookmakerIds: z.array(z.number()),
   marketCategories: z.array(
     z.custom<MarketCategoryId>(
       (value) =>
