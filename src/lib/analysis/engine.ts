@@ -415,6 +415,37 @@ function buildMarketPresentation(candidate: RawCandidate) {
     ? "2º tempo"
     : "1º tempo";
   const shotUnit = marketName.includes("target") ? "chute no alvo" : "chute";
+  const selectionLower = candidate.selection.toLowerCase();
+
+  if (candidate.marketCategory === "halves" && marketName.includes("winner")) {
+    if (selectionLower === candidate.homeTeam.toLowerCase()) {
+      return {
+        marketName: `Vencedor do ${halfLabel}`,
+        selection: `${candidate.homeTeam} vence o ${halfLabel}`,
+      };
+    }
+
+    if (selectionLower === candidate.awayTeam.toLowerCase()) {
+      return {
+        marketName: `Vencedor do ${halfLabel}`,
+        selection: `${candidate.awayTeam} vence o ${halfLabel}`,
+      };
+    }
+
+    if (selectionLower === "draw" || selectionLower === "empate") {
+      return {
+        marketName: `Vencedor do ${halfLabel}`,
+        selection: `Empate no ${halfLabel}`,
+      };
+    }
+  }
+
+  if (candidate.marketCategory === "halves" && marketName.includes("double chance")) {
+    return {
+      marketName: `Dupla chance no ${halfLabel}`,
+      selection: candidate.selection,
+    };
+  }
 
   if (marketName.includes("draw no bet")) {
     return {
@@ -445,7 +476,6 @@ function buildMarketPresentation(candidate: RawCandidate) {
   }
 
   if (candidate.marketCategory === "team_totals" && isOverUnderDirection(direction) && lineText) {
-    const selectionLower = candidate.selection.toLowerCase();
     const teamLabel = marketName.includes("away") || selectionLower.includes(candidate.awayTeam.toLowerCase())
       ? `do ${candidate.awayTeam}`
       : marketName.includes("home") || selectionLower.includes(candidate.homeTeam.toLowerCase())

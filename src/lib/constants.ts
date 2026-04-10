@@ -35,7 +35,16 @@ export const MARKET_RULES: MarketRule[] = [
     label: "Tempos",
     description: "Mercados de 1º tempo, 2º tempo e parcial da partida.",
     accent: "from-sky-500 to-cyan-500",
-    patterns: [/first half/i, /1st half/i, /second half/i, /2nd half/i, /halftime/i, /half time/i],
+    patterns: [
+      /first half/i,
+      /1st half/i,
+      /second half/i,
+      /2nd half/i,
+      /halftime/i,
+      /half time/i,
+      /firsthalf/i,
+      /secondhalf/i,
+    ],
     stabilityBias: 0.06,
   },
   {
@@ -51,7 +60,15 @@ export const MARKET_RULES: MarketRule[] = [
     label: "Chutes",
     description: "Chutes, chutes no alvo e volume de finalização.",
     accent: "from-pink-500 to-rose-500",
-    patterns: [/shots on target/i, /shot on target/i, /shots/i, /attempts/i],
+    patterns: [
+      /shots on target/i,
+      /shot on target/i,
+      /shot.?on.?goal/i,
+      /shotongoal/i,
+      /total shots/i,
+      /shots/i,
+      /attempts/i,
+    ],
     stabilityBias: -0.01,
   },
   {
@@ -98,7 +115,7 @@ export const MARKET_RULES: MarketRule[] = [
     label: "Gols",
     description: "Over/under, ambas marcam e totais de time.",
     accent: "from-amber-500 to-orange-500",
-    patterns: [/goal/i, /over/i, /under/i, /both teams/i, /btts/i, /total/i],
+    patterns: [/goals? over\/under/i, /goal/i, /both teams/i, /btts/i],
     stabilityBias: 0.1,
   },
 ];
