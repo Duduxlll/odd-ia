@@ -180,10 +180,6 @@ async function normalizeActiveJob(username: string, job: AnalysisJob) {
     return null;
   }
 
-  if (job.status !== "running" || !isJobStale(job.updatedAt)) {
-    return job;
-  }
-
   const runResult = await db.execute({
     sql: `
       SELECT id
@@ -198,6 +194,10 @@ async function normalizeActiveJob(username: string, job: AnalysisJob) {
   if (runResult.rows.length) {
     await completeAnalysisJob(username, job.id);
     return null;
+  }
+
+  if (job.status !== "running" || !isJobStale(job.updatedAt)) {
+    return job;
   }
 
   const timeoutMessage = process.env.VERCEL
