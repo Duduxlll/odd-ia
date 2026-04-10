@@ -9,6 +9,7 @@ import type {
   ApiFootballPrediction,
   ApiFootballStandingEntry,
   ApiFootballTeamStatistics,
+  SupportedLeague,
 } from "@/lib/types";
 
 type ApiFootballEnvelope<T> = {
@@ -342,4 +343,55 @@ export async function fetchLeagueRecentFixtures(
   });
 
   return payload.response;
+}
+
+export async function fetchAvailableLeagues() {
+  const payload = await apiFootballFetch<
+    Array<{
+      league?: {
+        id?: number;
+        name?: string;
+        type?: string;
+      };
+      country?: {
+        name?: string;
+      };
+      seasons?: Array<{
+        current?: boolean;
+        year?: number;
+      }>;
+    }>
+  >("/leagues", {
+    current: "true",
+    season: env.DEFAULT_SEASON,
+  });
+
+  const leagues = payload.response
+    .map((entry) => {
+      const id = entry.league?.id;
+      const name = entry.league?.name;
+      if (!id || !name) {
+        return null;
+      }
+
+      const type = entry.league?.type?.toLowerCase() ?? "";
+      return {
+        id,
+        name,
+        country: entry.country?.name ?? "Internacional",
+        emphasis: type === "cup" ? "copa ativa" : "liga ativa",
+      } satisfies SupportedLeague;
+    })
+    .filter((league): league is SupportedLeague => Boolean(league));
+
+  const deduped = new Map<number, SupportedLeague>();
+  for (const league of leagues) {
+    deduped.set(league.id, league);
+  }
+
+  return Array.from(deduped.values()).sort(
+    (left, right) =>
+      left.country.localeCompare(right.country, "pt-BR") ||
+      left.name.localeCompare(right.name, "pt-BR"),
+  );
 }

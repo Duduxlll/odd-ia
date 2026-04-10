@@ -7,15 +7,26 @@ import {
   getPerformanceSummary,
 } from "@/lib/db";
 import { getConfigStatus } from "@/lib/env";
+import { fetchAvailableLeagues } from "@/lib/providers/api-football";
 
 export async function getDashboardSnapshot(username: string) {
   await ensureSchema();
-  const [latestRun, performance, dashboardState, operations] = await Promise.all([
+  const [latestRun, performance, dashboardState, operations, allLeagues] = await Promise.all([
     getLatestAnalysisRun(username),
     getPerformanceSummary(username),
     getDashboardState(username),
     getOperationsStatus(username),
+    fetchAvailableLeagues().catch(() => TOP_FOOTBALL_LEAGUES),
   ]);
+
+  const priorityOrder = new Map(TOP_FOOTBALL_LEAGUES.map((league, index) => [league.id, index]));
+  const mergedLeagues = [
+    ...TOP_FOOTBALL_LEAGUES,
+    ...allLeagues.filter((league) => !priorityOrder.has(league.id)),
+  ].map((league) => {
+    const priority = TOP_FOOTBALL_LEAGUES.find((item) => item.id === league.id);
+    return priority ?? league;
+  });
 
   return {
     config: getConfigStatus(),
@@ -25,7 +36,7 @@ export async function getDashboardSnapshot(username: string) {
     operations,
     draftFilters: dashboardState.draftFilters ?? latestRun?.filters ?? DEFAULT_FILTERS,
     defaultFilters: DEFAULT_FILTERS,
-    supportedLeagues: TOP_FOOTBALL_LEAGUES,
+    supportedLeagues: mergedLeagues,
     supportedMarkets: SUPPORTED_MARKETS,
   };
 }

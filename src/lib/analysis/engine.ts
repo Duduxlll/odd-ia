@@ -244,7 +244,7 @@ function normalizeFilters(filters: Partial<AnalysisFilters> | undefined): Analys
   return {
     ...DEFAULT_FILTERS,
     ...filters,
-    leagueIds: filters?.leagueIds?.length ? filters.leagueIds : DEFAULT_FILTERS.leagueIds,
+    leagueIds: Array.isArray(filters?.leagueIds) ? filters.leagueIds : DEFAULT_FILTERS.leagueIds,
     marketCategories: filters?.marketCategories?.length
       ? filters.marketCategories
       : DEFAULT_FILTERS.marketCategories,
@@ -398,6 +398,10 @@ function buildMarketPresentation(candidate: RawCandidate) {
   const marketName = candidate.marketName.toLowerCase();
   const direction = selectionDirection(candidate.selection);
   const lineText = formatLineValue(candidate.lineValue);
+  const halfLabel = marketName.includes("second half") || marketName.includes("2nd half")
+    ? "2º tempo"
+    : "1º tempo";
+  const shotUnit = marketName.includes("target") ? "chute no alvo" : "chute";
 
   if (marketName.includes("total - away") && isOverUnderDirection(direction) && lineText) {
     return {
@@ -413,6 +417,20 @@ function buildMarketPresentation(candidate: RawCandidate) {
     };
   }
 
+  if (candidate.marketCategory === "team_totals" && isOverUnderDirection(direction) && lineText) {
+    const selectionLower = candidate.selection.toLowerCase();
+    const teamLabel = marketName.includes("away") || selectionLower.includes(candidate.awayTeam.toLowerCase())
+      ? `do ${candidate.awayTeam}`
+      : marketName.includes("home") || selectionLower.includes(candidate.homeTeam.toLowerCase())
+        ? `do ${candidate.homeTeam}`
+        : "da equipe monitorada";
+
+    return {
+      marketName: "Total de gols por equipe",
+      selection: buildThresholdLabel(direction, lineText, teamLabel, "gol"),
+    };
+  }
+
   if ((marketName.includes("both teams") || marketName.includes("btts")) && direction) {
     return {
       marketName: "Ambos marcam",
@@ -421,17 +439,26 @@ function buildMarketPresentation(candidate: RawCandidate) {
     };
   }
 
-  if (marketName.includes("first half") && isOverUnderDirection(direction) && lineText) {
+  if (candidate.marketCategory === "halves" && isOverUnderDirection(direction) && lineText) {
     const unit =
-      candidate.marketCategory === "corners"
+      marketName.includes("corner")
         ? "escanteio"
-        : candidate.marketCategory === "cards"
+        : marketName.includes("card")
           ? "cartao"
+          : marketName.includes("shot")
+            ? shotUnit
           : "gol";
 
     return {
-      marketName: "1º tempo",
-      selection: buildThresholdLabel(direction, lineText, "no 1º tempo", unit),
+      marketName: halfLabel,
+      selection: buildThresholdLabel(direction, lineText, `no ${halfLabel}`, unit),
+    };
+  }
+
+  if (candidate.marketCategory === "shots" && isOverUnderDirection(direction) && lineText) {
+    return {
+      marketName: marketName.includes("target") ? "Chutes no alvo" : "Total de chutes",
+      selection: buildThresholdLabel(direction, lineText, "na linha monitorada", shotUnit),
     };
   }
 
@@ -480,7 +507,10 @@ function buildMarketPresentation(candidate: RawCandidate) {
   if (marketName.includes("handicap")) {
     return {
       marketName: "Handicap",
-      selection: `${candidate.selection} (${candidate.marketName})`,
+      selection: candidate.selection.toLowerCase().includes(candidate.homeTeam.toLowerCase()) ||
+        candidate.selection.toLowerCase().includes(candidate.awayTeam.toLowerCase())
+        ? candidate.selection
+        : `Handicap em ${candidate.selection}`,
     };
   }
 
@@ -1278,12 +1308,16 @@ function buildTeamProfile({
 function derivePerspective(candidate: RawCandidate) {
   const selection = candidate.selection.toLowerCase();
   const marketName = candidate.marketName.toLowerCase();
+  const homeName = candidate.homeTeam.toLowerCase();
+  const awayName = candidate.awayTeam.toLowerCase();
 
-  if (selection === candidate.homeTeam.toLowerCase()) return "home";
-  if (selection === candidate.awayTeam.toLowerCase()) return "away";
+  if (selection === homeName) return "home";
+  if (selection === awayName) return "away";
   if (selection.includes("ou empate")) {
-    return selection.includes(candidate.homeTeam.toLowerCase()) ? "home_or_draw" : "away_or_draw";
+    return selection.includes(homeName) ? "home_or_draw" : "away_or_draw";
   }
+  if (selection.includes(homeName)) return "home";
+  if (selection.includes(awayName)) return "away";
   if (selection.startsWith("over")) return "over";
   if (selection.startsWith("under")) return "under";
   if (selection === "yes" || selection.includes("sim")) {
@@ -1884,7 +1918,10 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
         modelProbability = selectionDirection(candidate.selection) === "under" ? 1 - overProbability : overProbability;
         modelProbability = modelProbability * 0.76 + implied * 0.24;
         predictionPulse = "cartoes combinam disciplina recente, faltas e perfil de confronto";
-      } else if (candidate.marketCategory === "players") {
+      } else if (
+        candidate.marketCategory === "players" ||
+        candidate.marketCategory === "shots"
+      ) {
         const referencedPlayer =
           findReferencedPlayer(candidate.selection, homeProfile.players) ??
           findReferencedPlayer(candidate.selection, awayProfile.players);
@@ -1898,10 +1935,16 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
             0.76,
           );
           modelProbability = implied * 0.42 + playerSignal * 0.58;
-          predictionPulse = `${referencedPlayer.name} entrou no modelo por minutos, volume individual e papel no time`;
+          predictionPulse =
+            candidate.marketCategory === "shots"
+              ? `${referencedPlayer.name} entrou no modelo por minutos e volume de finalizacao individual`
+              : `${referencedPlayer.name} entrou no modelo por minutos, volume individual e papel no time`;
         } else {
           modelProbability += getMarketStabilityBias(candidate.marketCategory) * 0.16;
-          predictionPulse = "player prop sem atleta claramente identificado no feed";
+          predictionPulse =
+            candidate.marketCategory === "shots"
+              ? "mercado de chutes sem atleta claramente identificado no feed"
+              : "player prop sem atleta claramente identificado no feed";
         }
       } else {
         modelProbability += getMarketStabilityBias(candidate.marketCategory) * 0.16;
@@ -1935,7 +1978,12 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
 
   if (!lineupsReady) modelProbability -= 0.018;
   if (homeProfile.structuralAbsences.length + awayProfile.structuralAbsences.length >= 2) modelProbability -= 0.008;
-  if (candidate.marketCategory === "players" && !lineupsReady) modelProbability -= 0.012;
+  if (
+    (candidate.marketCategory === "players" || candidate.marketCategory === "shots") &&
+    !lineupsReady
+  ) {
+    modelProbability -= 0.012;
+  }
 
   const calibrationNotes: string[] = [];
   const calibrationAdjustments = [
@@ -1979,6 +2027,7 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
       quality +
       (lineupsReady ? 0 : 0.1) +
       (candidate.marketCategory === "players" ? 0.1 : 0) +
+      (candidate.marketCategory === "shots" ? 0.07 : 0) +
       (candidate.marketCategory === "cards" ? 0.06 : 0) +
       weatherFlags.caution.length * 0.025 +
       (homeProfile.structuralAbsences.length + awayProfile.structuralAbsences.length) * 0.02 +
@@ -2430,33 +2479,106 @@ async function enrichCandidate(
 }
 
 function buildAccumulator(picks: AnalysisPick[], targetAccumulatorOdd: number, includeSameGame: boolean) {
-  const selected: AnalysisPick[] = [];
-  let combinedOdd = 1;
-  const usedFixtures = new Set<number>();
+  type AccumulatorCandidate = {
+    picks: AnalysisPick[];
+    combinedOdd: number;
+    score: number;
+  };
 
-  for (const pick of picks) {
-    if (!includeSameGame && usedFixtures.has(pick.fixtureId)) continue;
-    if (pick.aiVerdict === "pass") continue;
-    selected.push(pick);
-    combinedOdd *= pick.bestOdd;
-    usedFixtures.add(pick.fixtureId);
-    if (combinedOdd >= targetAccumulatorOdd || selected.length >= 4) break;
+  const eligible = picks.filter((pick) => pick.aiVerdict !== "pass").slice(0, 14);
+  if (!eligible.length) return null;
+
+  const maxLegs =
+    targetAccumulatorOdd >= 9 ? 5 : targetAccumulatorOdd >= 5 ? 4 : targetAccumulatorOdd >= 3 ? 3 : 2;
+
+  let best: AccumulatorCandidate | null = null;
+
+  function evaluate(selected: AnalysisPick[], combinedOdd: number) {
+    if (!selected.length) {
+      return;
+    }
+
+    const averageConfidence =
+      selected.reduce((total, pick) => total + pick.confidence, 0) / selected.length;
+    const averageEdge = selected.reduce((total, pick) => total + pick.edge, 0) / selected.length;
+    const distanceRatio = Math.abs(combinedOdd - targetAccumulatorOdd) / Math.max(targetAccumulatorOdd, 1);
+    const targetHitBonus = combinedOdd >= targetAccumulatorOdd ? 0.18 : 0;
+    const underTargetPenalty = combinedOdd < targetAccumulatorOdd ? distanceRatio * 0.24 : 0;
+    const overshootPenalty = combinedOdd > targetAccumulatorOdd ? distanceRatio * 0.12 : 0;
+    const score =
+      1.25 -
+      distanceRatio +
+      targetHitBonus -
+      underTargetPenalty -
+      overshootPenalty +
+      averageConfidence / 220 +
+      averageEdge * 2.8 -
+      Math.max(0, selected.length - 2) * 0.035;
+
+    if (!best || score > best.score) {
+      best = {
+        picks: [...selected],
+        combinedOdd,
+        score,
+      };
+    }
   }
 
-  if (!selected.length) return null;
+  function walk(
+    startIndex: number,
+    selected: AnalysisPick[],
+    combinedOdd: number,
+    usedFixtures: Set<number>,
+  ) {
+    evaluate(selected, combinedOdd);
+
+    if (selected.length >= maxLegs || combinedOdd > targetAccumulatorOdd * 1.65) {
+      return;
+    }
+
+    for (let index = startIndex; index < eligible.length; index += 1) {
+      const pick = eligible[index];
+      if (!includeSameGame && usedFixtures.has(pick.fixtureId)) {
+        continue;
+      }
+
+      selected.push(pick);
+      const nextCombinedOdd = combinedOdd * pick.bestOdd;
+      const nextUsedFixtures = includeSameGame ? usedFixtures : new Set([...usedFixtures, pick.fixtureId]);
+      walk(index + 1, selected, nextCombinedOdd, nextUsedFixtures);
+      selected.pop();
+    }
+  }
+
+  walk(0, [], 1, new Set<number>());
+
+  if (!best) {
+    return null;
+  }
+
+  const bestCandidate = best as AccumulatorCandidate;
 
   const averageConfidence =
-    selected.reduce((total, pick) => total + pick.confidence, 0) / selected.length;
+    bestCandidate.picks.reduce((total, pick) => total + pick.confidence, 0) /
+    bestCandidate.picks.length;
+  const targetGap =
+    Math.abs(bestCandidate.combinedOdd - targetAccumulatorOdd) / Math.max(targetAccumulatorOdd, 1);
 
   return {
     targetOdd: targetAccumulatorOdd,
-    combinedOdd,
-    confidence: clamp(averageConfidence - selected.length * 4.5, 18, 92),
-    picks: selected,
+    combinedOdd: bestCandidate.combinedOdd,
+    confidence: clamp(
+      averageConfidence - bestCandidate.picks.length * 4.5 - targetGap * 10,
+      18,
+      92,
+    ),
+    picks: bestCandidate.picks,
     rationale:
-      selected.length === 1
-        ? "A odd alvo já foi atendida com uma entrada única."
-      : "Múltipla montada priorizando picks de fixtures diferentes para reduzir correlação.",
+      bestCandidate.combinedOdd >= targetAccumulatorOdd && targetGap <= 0.18
+        ? "Múltipla calibrada para bater ou encostar muito na odd alvo com a combinação mais saudável do radar."
+        : bestCandidate.combinedOdd >= targetAccumulatorOdd
+          ? "Múltipla passou a odd alvo com a combinação mais estável encontrada entre confiança, edge e correlação."
+          : "Não houve combinação segura para bater a odd alvo; a carteira ficou abaixo para preservar qualidade.",
   };
 }
 

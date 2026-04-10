@@ -1,8 +1,12 @@
 export type MarketCategoryId =
   | "result"
+  | "handicaps"
+  | "halves"
+  | "team_totals"
   | "goals"
   | "corners"
   | "cards"
+  | "shots"
   | "players";
 
 export interface AnalysisFilters {

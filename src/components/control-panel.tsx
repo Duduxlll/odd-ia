@@ -116,6 +116,14 @@ export function ControlPanel({
   const [showLeagues, setShowLeagues] = useState(false);
   const [showMarkets, setShowMarkets] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [leagueQuery, setLeagueQuery] = useState("");
+  const topLeagueIds = leagues.slice(0, 8).map((league) => league.id);
+  const normalizedLeagueQuery = leagueQuery.trim().toLowerCase();
+  const visibleLeagues = normalizedLeagueQuery
+    ? leagues.filter((league) =>
+        `${league.name} ${league.country}`.toLowerCase().includes(normalizedLeagueQuery),
+      )
+    : leagues;
 
   return (
     <motion.aside
@@ -151,7 +159,9 @@ export function ControlPanel({
       {/* Summary pills */}
       <div className="mt-4 flex flex-wrap gap-1.5">
         {[
-          `${filters.leagueIds.length} ligas`,
+          filters.leagueIds.length
+            ? `${filters.leagueIds.length} ligas prioritárias`
+            : "todas as ligas",
           `${filters.marketCategories.length} mercados`,
           `faixa ${filters.minOdd.toFixed(2)}-${filters.maxOdd.toFixed(2)}`,
         ].map((label) => (
@@ -244,7 +254,7 @@ export function ControlPanel({
       <div className="mt-5 flex flex-wrap gap-2">
         <SectionToggle
           label="Ligas prioritárias"
-          value={String(filters.leagueIds.length)}
+          value={filters.leagueIds.length ? String(filters.leagueIds.length) : "Todas"}
           active={showLeagues}
           onClick={() => setShowLeagues((c) => !c)}
         />
@@ -279,19 +289,81 @@ export function ControlPanel({
                 Ligas prioritárias
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {leagues.map((league) => {
-                  const selected = filters.leagueIds.includes(league.id);
-                  return (
-                    <button
-                      key={league.id}
-                      type="button"
-                      onClick={() => onToggleLeague(league.id)}
-                      className="rounded-full px-3 py-2 text-sm font-medium transition-all"
-                      style={
-                        selected
-                          ? {
-                              backgroundColor: "rgba(34,211,238,0.16)",
-                              border: "1px solid rgba(34,211,238,0.32)",
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...filters, leagueIds: [] })}
+                  className="rounded-full px-3 py-2 text-sm font-medium transition-all"
+                  style={
+                    filters.leagueIds.length === 0
+                      ? {
+                          backgroundColor: "rgba(34,211,238,0.16)",
+                          border: "1px solid rgba(34,211,238,0.32)",
+                          color: "#22D3EE",
+                        }
+                      : {
+                          backgroundColor: "#0a1020",
+                          border: "1px solid #1e2d42",
+                          color: "#94A3B8",
+                        }
+                  }
+                >
+                  Todas as ligas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...filters, leagueIds: topLeagueIds })}
+                  className="rounded-full px-3 py-2 text-sm font-medium transition-all"
+                  style={
+                    filters.leagueIds.length > 0 &&
+                    filters.leagueIds.length === topLeagueIds.length &&
+                    topLeagueIds.every((leagueId) => filters.leagueIds.includes(leagueId))
+                      ? {
+                          backgroundColor: "rgba(34,211,238,0.16)",
+                          border: "1px solid rgba(34,211,238,0.32)",
+                          color: "#22D3EE",
+                        }
+                      : {
+                          backgroundColor: "#0a1020",
+                          border: "1px solid #1e2d42",
+                          color: "#94A3B8",
+                        }
+                  }
+                >
+                  Só prioritárias
+                </button>
+              </div>
+              <div className="mt-3">
+                <input
+                  type="search"
+                  value={leagueQuery}
+                  onChange={(event) => setLeagueQuery(event.target.value)}
+                  placeholder="Buscar liga ou país"
+                  className={cn(inputClass, "h-11")}
+                  style={inputStyle}
+                />
+              </div>
+              <p className="mt-3 text-xs leading-5 text-slate-500">
+                {filters.leagueIds.length === 0
+                  ? `Modo aberto: o scan pode puxar qualquer uma das ${leagues.length} ligas disponíveis.`
+                  : "As ligas marcadas entram com prioridade no radar. Se você limpar tudo, o sistema abre o mapa completo."}
+              </p>
+              <div className="mt-3 max-h-[22rem] overflow-y-auto pr-1">
+                <div className="flex flex-wrap gap-2">
+                  {visibleLeagues.map((league) => {
+                    const selected =
+                      filters.leagueIds.length === 0 || filters.leagueIds.includes(league.id);
+                    const emphasized = topLeagueIds.includes(league.id);
+                    return (
+                      <button
+                        key={league.id}
+                        type="button"
+                        onClick={() => onToggleLeague(league.id)}
+                        className="rounded-2xl px-3 py-2 text-left text-sm font-medium transition-all"
+                        style={
+                          selected
+                            ? {
+                                backgroundColor: "rgba(34,211,238,0.16)",
+                                border: "1px solid rgba(34,211,238,0.32)",
                               color: "#22D3EE",
                             }
                           : {
@@ -299,12 +371,25 @@ export function ControlPanel({
                               border: "1px solid #1e2d42",
                               color: "#94A3B8",
                             }
-                      }
+                        }
+                      >
+                        <span className="block text-sm">{league.name}</span>
+                        <span className="mt-0.5 block text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                          {league.country}
+                          {emphasized ? " • prioridade" : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {!visibleLeagues.length ? (
+                    <div
+                      className="w-full rounded-2xl px-3 py-4 text-sm text-slate-500"
+                      style={{ backgroundColor: "#0a1020", border: "1px solid #1e2d42" }}
                     >
-                      {league.name}
-                    </button>
-                  );
-                })}
+                      Nenhuma liga encontrada para essa busca.
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </motion.div>

@@ -108,14 +108,20 @@ export function HeroPanel({
   run,
   activeJob,
   config,
+  availableLeagueCount,
 }: {
   run: AnalysisRun | null;
   activeJob: AnalysisJob | null;
   config: ConfigStatus;
+  availableLeagueCount: number;
 }) {
   const jobPending = activeJob?.status === "queued" || activeJob?.status === "running";
   const filters = activeJob?.filters ?? run?.filters;
-  const leagues = filters?.leagueIds.length ?? 0;
+  const leaguesLabel = filters
+    ? filters.leagueIds.length
+      ? `${filters.leagueIds.length} ligas ativas`
+      : `todas as ${availableLeagueCount} ligas`
+    : "—";
   const markets = filters?.marketCategories.length ?? 0;
   const band = filters ? `${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}` : "—";
 
@@ -188,7 +194,7 @@ export function HeroPanel({
             </div>
 
             <div className="flex flex-wrap gap-1.5">
-              <ScopePill label={`${leagues} ligas ativas`} />
+              <ScopePill label={leaguesLabel} />
               <ScopePill label={`${markets} famílias`} />
               <ScopePill label={`faixa ${band}`} />
               {jobPending ? (

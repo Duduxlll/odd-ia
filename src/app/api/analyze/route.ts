@@ -3,7 +3,8 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
-import { DEFAULT_FILTERS } from "@/lib/constants";
+import { DEFAULT_FILTERS, SUPPORTED_MARKETS } from "@/lib/constants";
+import type { MarketCategoryId } from "@/lib/types";
 import {
   clearAnalysisHistory,
   createAnalysisJob,
@@ -17,6 +18,8 @@ import { dispatchWorker } from "@/lib/worker";
 export const runtime = "nodejs";
 export const maxDuration = 800;
 
+const supportedMarketCategoryIds = SUPPORTED_MARKETS.map((market) => market.id);
+
 const filtersSchema = z.object({
   scanDate: z.string().min(10),
   horizonHours: z.number().min(12).max(96),
@@ -26,7 +29,12 @@ const filtersSchema = z.object({
   targetAccumulatorOdd: z.number().min(1.1).max(40),
   leagueIds: z.array(z.number()),
   marketCategories: z.array(
-    z.enum(["result", "goals", "corners", "cards", "players"]),
+    z.custom<MarketCategoryId>(
+      (value) =>
+        typeof value === "string" &&
+        supportedMarketCategoryIds.includes(value as MarketCategoryId),
+      { message: "Família de mercado inválida." },
+    ),
   ),
   useWebSearch: z.boolean(),
   includeSameGame: z.boolean(),

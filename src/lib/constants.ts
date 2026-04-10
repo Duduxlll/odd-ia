@@ -23,16 +23,47 @@ export const TOP_FOOTBALL_LEAGUES: SupportedLeague[] = [
 
 export const MARKET_RULES: MarketRule[] = [
   {
+    id: "handicaps",
+    label: "Handicaps",
+    description: "Asian handicap, linhas de spread e proteções de lado.",
+    accent: "from-violet-500 to-indigo-500",
+    patterns: [/handicap/i, /asian/i, /spread/i],
+    stabilityBias: 0.08,
+  },
+  {
+    id: "halves",
+    label: "Tempos",
+    description: "Mercados de 1º tempo, 2º tempo e parcial da partida.",
+    accent: "from-sky-500 to-cyan-500",
+    patterns: [/first half/i, /1st half/i, /second half/i, /2nd half/i, /halftime/i, /half time/i],
+    stabilityBias: 0.06,
+  },
+  {
+    id: "team_totals",
+    label: "Totais de time",
+    description: "Gols do mandante/visitante e linhas por equipe.",
+    accent: "from-orange-500 to-amber-500",
+    patterns: [/total - away/i, /total - home/i, /team total/i, /home total/i, /away total/i],
+    stabilityBias: 0.09,
+  },
+  {
+    id: "shots",
+    label: "Chutes",
+    description: "Chutes, chutes no alvo e volume de finalização.",
+    accent: "from-pink-500 to-rose-500",
+    patterns: [/shots on target/i, /shot on target/i, /shots/i, /attempts/i],
+    stabilityBias: -0.01,
+  },
+  {
     id: "result",
     label: "Resultado",
-    description: "1x2, dupla chance, draw no bet e handicaps mais estáveis.",
+    description: "1x2, dupla chance, empate anula e vencedor do jogo.",
     accent: "from-cyan-500 to-teal-500",
     patterns: [
       /winner/i,
       /result/i,
       /double chance/i,
       /draw no bet/i,
-      /handicap/i,
       /home\/away/i,
       /match/i,
     ],
@@ -57,9 +88,9 @@ export const MARKET_RULES: MarketRule[] = [
   {
     id: "players",
     label: "Jogador",
-    description: "Props de artilheiro, chutes e mercados individuais.",
+    description: "Artilheiro, assistências e props individuais do atleta.",
     accent: "from-fuchsia-500 to-pink-500",
-    patterns: [/player/i, /scorer/i, /assist/i, /shot/i, /goal scorer/i],
+    patterns: [/player/i, /scorer/i, /assist/i, /goal scorer/i, /to score/i],
     stabilityBias: -0.04,
   },
   {

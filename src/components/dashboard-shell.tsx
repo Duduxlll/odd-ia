@@ -294,7 +294,12 @@ export function DashboardShell({
 
         {/* Hero + Control panel */}
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.18fr)_390px]">
-          <HeroPanel run={run} activeJob={activeJob} config={initialSnapshot.config} />
+          <HeroPanel
+            run={run}
+            activeJob={activeJob}
+            config={initialSnapshot.config}
+            availableLeagueCount={initialSnapshot.supportedLeagues.length}
+          />
           <ControlPanel
             config={initialSnapshot.config}
             filters={filters}
