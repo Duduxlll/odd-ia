@@ -338,6 +338,78 @@ function selectFixturesForOdds(
   return selected;
 }
 
+function balanceItemsByCategory<T extends { marketCategory: MarketCategoryId }>(
+  items: T[],
+  categories: MarketCategoryId[],
+  limit: number,
+  getKey: (item: T) => string,
+) {
+  if (limit <= 0 || items.length <= limit || categories.length <= 1) {
+    return items.slice(0, limit);
+  }
+
+  const activeCategories = Array.from(new Set(categories)).filter((category) =>
+    items.some((item) => item.marketCategory === category),
+  );
+
+  if (activeCategories.length <= 1) {
+    return items.slice(0, limit);
+  }
+
+  const queueByCategory = new Map(
+    activeCategories.map((category) => [
+      category,
+      items.filter((item) => item.marketCategory === category),
+    ]),
+  );
+  const selected: T[] = [];
+  const usedKeys = new Set<string>();
+  let added = true;
+
+  while (selected.length < limit && added) {
+    added = false;
+
+    for (const category of activeCategories) {
+      const queue = queueByCategory.get(category);
+      if (!queue?.length) {
+        continue;
+      }
+
+      const next = queue.shift()!;
+      const key = getKey(next);
+      if (usedKeys.has(key)) {
+        continue;
+      }
+
+      usedKeys.add(key);
+      selected.push(next);
+      added = true;
+
+      if (selected.length >= limit) {
+        break;
+      }
+    }
+  }
+
+  if (selected.length < limit) {
+    for (const item of items) {
+      const key = getKey(item);
+      if (usedKeys.has(key)) {
+        continue;
+      }
+
+      usedKeys.add(key);
+      selected.push(item);
+
+      if (selected.length >= limit) {
+        break;
+      }
+    }
+  }
+
+  return selected;
+}
+
 function isFixtureInsideWindow(
   fixtureDate: string,
   scanDate: string,
@@ -537,6 +609,34 @@ function buildMarketPresentation(candidate: RawCandidate) {
     return {
       marketName: "Total de cartoes",
       selection: buildThresholdLabel(direction, lineText, "no jogo", "cartao"),
+    };
+  }
+
+  if (candidate.marketCategory === "corners") {
+    return {
+      marketName: "Mercado de escanteios",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "cards") {
+    return {
+      marketName: "Mercado de cartoes",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "shots") {
+    return {
+      marketName: "Mercado de chutes",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "players") {
+    return {
+      marketName: "Mercado de jogador",
+      selection: candidate.selection,
     };
   }
 
@@ -2957,6 +3057,7 @@ export async function runFootballAnalysis(
   );
   const oddsEntries = oddsByFixture.flat();
   let rawCandidates = buildCandidates(eligibleFixtures, oddsEntries, filters);
+  const categoriesWithOdds = new Set(rawCandidates.map((candidate) => candidate.marketCategory));
   const lineHistory = await getLineHistoryByCandidateIds(
     rawCandidates.map((candidate) => candidate.candidateId),
   );
@@ -2974,7 +3075,12 @@ export async function runFootballAnalysis(
         Math.max(32, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
       );
   const seedVolume = baseSeedVolume;
-  const seeded = rawCandidates.slice(0, seedVolume);
+  const seeded = balanceItemsByCategory(
+    rawCandidates,
+    filters.marketCategories,
+    seedVolume,
+    (candidate) => candidate.candidateId,
+  );
   const getFixtureContext = createFixtureContextLoader(filters);
   await reportProgress(`Aprofundando contexto em ${seeded.length} mercados candidatos.`);
   const enriched = await mapLimit(
@@ -2996,8 +3102,18 @@ export async function runFootballAnalysis(
       : `Foram monitorados ${fixturesForOdds.length} fixtures com odds nesta rodada, mas nenhum mercado elegível entrou no filtro atual.`;
   await reportProgress("Pontuando valor, risco e shortlist final.");
   const aiReviewSeed = aiEnabled
-    ? picks.slice(0, Math.min(Math.max(filters.pickCount * 3, 12), 24))
-    : picks.slice(0, filters.pickCount);
+    ? balanceItemsByCategory(
+        picks,
+        filters.marketCategories,
+        Math.min(Math.max(filters.pickCount * 3, 12), 24),
+        (pick) => pick.candidateId,
+      )
+    : balanceItemsByCategory(
+        picks,
+        filters.marketCategories,
+        filters.pickCount,
+        (pick) => pick.candidateId,
+      );
   const aiReview = await reviewPicksWithOpenAI(aiReviewSeed, filters).catch(() => null);
 
   if (aiReview) {
@@ -3024,12 +3140,46 @@ export async function runFootballAnalysis(
         );
       });
 
-    picks = (reviewedPicks.filter((pick) => pick.aiVerdict !== "pass").length
+    const viableReviewedPicks = reviewedPicks.filter((pick) => pick.aiVerdict !== "pass").length
       ? reviewedPicks.filter((pick) => pick.aiVerdict !== "pass")
-      : reviewedPicks
-    ).slice(0, filters.pickCount);
+      : reviewedPicks;
+
+    picks = balanceItemsByCategory(
+      viableReviewedPicks,
+      filters.marketCategories,
+      filters.pickCount,
+      (pick) => pick.candidateId,
+    );
   } else {
-    picks = picks.slice(0, filters.pickCount);
+    picks = balanceItemsByCategory(
+      picks,
+      filters.marketCategories,
+      filters.pickCount,
+      (pick) => pick.candidateId,
+    );
+  }
+
+  const categoriesWithFinalPicks = new Set(picks.map((pick) => pick.marketCategory));
+  const missingOddsCategories = filters.marketCategories.filter(
+    (category) => !categoriesWithOdds.has(category),
+  );
+  const filteredOutCategories = filters.marketCategories.filter(
+    (category) => categoriesWithOdds.has(category) && !categoriesWithFinalPicks.has(category),
+  );
+
+  if (missingOddsCategories.length || filteredOutCategories.length) {
+    const notes: string[] = [];
+    if (missingOddsCategories.length) {
+      notes.push(
+        `Sem odds elegiveis nesta faixa para: ${missingOddsCategories.join(", ")}.`,
+      );
+    }
+    if (filteredOutCategories.length) {
+      notes.push(
+        `Com odds no feed, mas fora do corte final de valor/risco: ${filteredOutCategories.join(", ")}.`,
+      );
+    }
+    executiveSummary = `${executiveSummary} ${notes.join(" ")}`.trim();
   }
 
   const accumulator = buildAccumulator(picks, filters.targetAccumulatorOdd, filters.includeSameGame);
