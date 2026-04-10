@@ -55,6 +55,15 @@ export function formatDateTimeInSaoPaulo(value: string) {
   }).format(new Date(value));
 }
 
+export function getTodayDateInSaoPaulo() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 export function slugify(value: string) {
   return value
     .normalize("NFD")

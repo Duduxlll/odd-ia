@@ -197,24 +197,20 @@ export function ControlPanel({
           <input
             type="date"
             value={filters.scanDate}
-            onChange={(event) => onChange({ ...filters, scanDate: event.target.value })}
+            readOnly
+            disabled
             className={inputClass}
-            style={inputStyle}
+            style={{ ...inputStyle, color: "#94A3B8", opacity: 0.9 }}
           />
         </Field>
         <Field label="Janela">
           <select
             value={String(filters.horizonHours)}
-            onChange={(event) =>
-              onChange({ ...filters, horizonHours: Number(event.target.value) })
-            }
+            disabled
             className={inputClass}
-            style={inputStyle}
+            style={{ ...inputStyle, color: "#94A3B8", opacity: 0.9 }}
           >
-            <option value="24">24 horas</option>
-            <option value="36">36 horas</option>
-            <option value="48">48 horas</option>
-            <option value="72">72 horas</option>
+            <option value="24">Hoje até 23:59</option>
           </select>
         </Field>
         <Field label="Odd mínima">

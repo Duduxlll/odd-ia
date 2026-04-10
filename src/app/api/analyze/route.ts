@@ -93,7 +93,7 @@ export async function PATCH(request: Request) {
   try {
     const session = await requireAuthenticatedSession();
     const body = await request.json();
-    const filters = filtersSchema.parse(body);
+    const filters = normalizeAnalysisFilters(filtersSchema.parse(body));
 
     await saveDraftFilters(session.username, filters);
     return NextResponse.json({ ok: true, filters });
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
   try {
     const session = await requireAuthenticatedSession();
     const body = await request.json();
-    const filters = filtersSchema.parse(body);
+    const filters = normalizeAnalysisFilters(filtersSchema.parse(body));
     const origin = new URL(request.url).origin;
 
     await saveDraftFilters(session.username, filters);

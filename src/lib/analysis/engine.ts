@@ -1,4 +1,4 @@
-import { addHours, eachDayOfInterval, format, parseISO, startOfDay } from "date-fns";
+import { eachDayOfInterval, format } from "date-fns";
 
 import { DEFAULT_FILTERS, getMarketStabilityBias, resolveMarketCategory } from "@/lib/constants";
 import { reviewPicksWithOpenAI } from "@/lib/analysis/openai";
@@ -53,7 +53,16 @@ import type {
   WeatherSnapshot,
   XgContextSnapshot,
 } from "@/lib/types";
-import { clamp, formatOdd, mapLimit, mean, parseDecimal, parsePercentString, slugify } from "@/lib/utils";
+import {
+  clamp,
+  formatOdd,
+  getTodayDateInSaoPaulo,
+  mapLimit,
+  mean,
+  parseDecimal,
+  parsePercentString,
+  slugify,
+} from "@/lib/utils";
 
 type RawCandidate = {
   candidateId: string;
@@ -244,6 +253,8 @@ function normalizeFilters(filters: Partial<AnalysisFilters> | undefined): Analys
   return {
     ...DEFAULT_FILTERS,
     ...filters,
+    scanDate: getTodayDateInSaoPaulo(),
+    horizonHours: 24,
     leagueIds: Array.isArray(filters?.leagueIds) ? filters.leagueIds : DEFAULT_FILTERS.leagueIds,
     bookmakerIds: Array.isArray(filters?.bookmakerIds)
       ? filters.bookmakerIds
@@ -254,33 +265,36 @@ function normalizeFilters(filters: Partial<AnalysisFilters> | undefined): Analys
   };
 }
 
-function getScanDates(scanDate: string, horizonHours: number) {
-  const windowStart = startOfDay(parseISO(scanDate));
-  const windowEnd = addHours(windowStart, horizonHours);
-
-  return eachDayOfInterval({ start: windowStart, end: windowEnd }).map((date) =>
-    format(date, "yyyy-MM-dd"),
-  );
+function getScanDayStart(scanDate: string) {
+  return new Date(`${scanDate}T00:00:00-03:00`);
 }
 
-function getTodayInScanTimezone() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: env.API_FOOTBALL_TIMEZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+function getScanDayEnd(scanDate: string) {
+  return new Date(`${scanDate}T23:59:59.999-03:00`);
 }
 
-function getScanWindowStart(scanDate: string) {
-  const scanDayStart = startOfDay(parseISO(scanDate));
-  const todayInScanTimezone = getTodayInScanTimezone();
+function getScanWindow(scanDate: string, horizonHours: number) {
+  const todayInScanTimezone = getTodayDateInSaoPaulo();
+  const dayStart = getScanDayStart(scanDate);
+  const dayEnd = getScanDayEnd(scanDate);
 
-  if (scanDate === todayInScanTimezone) {
-    return new Date();
+  if (horizonHours === 24) {
+    return {
+      start: scanDate === todayInScanTimezone ? new Date() : dayStart,
+      end: dayEnd,
+    };
   }
 
-  return scanDayStart;
+  return {
+    start: dayStart,
+    end: dayEnd,
+  };
+}
+
+function getScanDates(scanDate: string, horizonHours: number) {
+  const { start, end } = getScanWindow(scanDate, horizonHours);
+
+  return eachDayOfInterval({ start, end }).map((date) => format(date, "yyyy-MM-dd"));
 }
 
 function filterEligibleFixtures(
@@ -416,8 +430,7 @@ function isFixtureInsideWindow(
   horizonHours: number,
 ) {
   const kickoff = new Date(fixtureDate);
-  const windowStart = getScanWindowStart(scanDate);
-  const windowEnd = addHours(windowStart, horizonHours);
+  const { start: windowStart, end: windowEnd } = getScanWindow(scanDate, horizonHours);
 
   return kickoff >= windowStart && kickoff <= windowEnd;
 }

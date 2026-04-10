@@ -4,6 +4,7 @@ import type {
   SupportedLeague,
   SupportedMarketCategory,
 } from "@/lib/types";
+import { getTodayDateInSaoPaulo } from "@/lib/utils";
 
 type MarketRule = SupportedMarketCategory & {
   patterns: RegExp[];
@@ -211,8 +212,8 @@ export const SUPPORTED_MARKETS: SupportedMarketCategory[] = MARKET_RULES.map((ru
 }));
 
 export const DEFAULT_FILTERS: AnalysisFilters = {
-  scanDate: new Date().toISOString().slice(0, 10),
-  horizonHours: 36,
+  scanDate: getTodayDateInSaoPaulo(),
+  horizonHours: 24,
   minOdd: 1.4,
   maxOdd: 1.65,
   pickCount: 10,
@@ -227,9 +228,13 @@ export const DEFAULT_FILTERS: AnalysisFilters = {
 export function normalizeAnalysisFilters(
   filters?: Partial<AnalysisFilters> | null,
 ): AnalysisFilters {
+  const today = getTodayDateInSaoPaulo();
+
   return {
     ...DEFAULT_FILTERS,
     ...filters,
+    scanDate: today,
+    horizonHours: 24,
     leagueIds: Array.isArray(filters?.leagueIds)
       ? filters.leagueIds
       : DEFAULT_FILTERS.leagueIds,
