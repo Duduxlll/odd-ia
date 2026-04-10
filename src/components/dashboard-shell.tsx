@@ -168,7 +168,6 @@ export function DashboardShell({
           ? "Job enfileirado. O worker vai assumir o scan em instantes."
           : "Scan em andamento. Você pode atualizar a página que o processo continua.",
       );
-      router.refresh();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error ? caughtError.message : "Falha ao executar a análise.",
@@ -195,7 +194,6 @@ export function DashboardShell({
       setActiveJob(null);
       setFilters(normalizeAnalysisFilters(payload.filters ?? initialSnapshot.defaultFilters));
       setSystemNote(null);
-      router.refresh();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error ? caughtError.message : "Falha ao limpar a análise.",
