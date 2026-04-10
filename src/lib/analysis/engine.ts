@@ -478,6 +478,20 @@ function buildThresholdLabel(
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+function inferStatsLabel(marketName: string) {
+  if (/offside/i.test(marketName)) return { marketName: "Total de impedimentos", unit: "impedimento" };
+  if (/pass/i.test(marketName)) return { marketName: "Total de passes", unit: "passe" };
+  if (/tackle/i.test(marketName)) return { marketName: "Total de desarmes", unit: "desarme" };
+  if (/interception/i.test(marketName)) return { marketName: "Total de interceptações", unit: "interceptação" };
+  if (/foul/i.test(marketName)) return { marketName: "Total de faltas", unit: "falta" };
+  if (/throw.?in|throw ins/i.test(marketName)) return { marketName: "Total de laterais", unit: "lateral" };
+  if (/goal kicks?|goal kick/i.test(marketName)) return { marketName: "Total de tiros de meta", unit: "tiro de meta" };
+  if (/save/i.test(marketName)) return { marketName: "Total de defesas", unit: "defesa" };
+  if (/clearance/i.test(marketName)) return { marketName: "Total de cortes", unit: "corte" };
+  if (/block/i.test(marketName)) return { marketName: "Total de bloqueios", unit: "bloqueio" };
+  return { marketName: "Mercado de estatísticas", unit: "evento" };
+}
+
 function buildMarketPresentation(candidate: RawCandidate) {
   const marketName = candidate.marketName.toLowerCase();
   const direction = selectionDirection(candidate.selection);
@@ -488,6 +502,60 @@ function buildMarketPresentation(candidate: RawCandidate) {
     : "1º tempo";
   const shotUnit = marketName.includes("target") ? "chute no alvo" : "chute";
   const selectionLower = candidate.selection.toLowerCase();
+
+  if (marketName.includes("correct score")) {
+    return {
+      marketName:
+        marketName.includes("first half") || marketName.includes("1st half")
+          ? "Placar exato do 1º tempo"
+          : marketName.includes("second half") || marketName.includes("2nd half")
+            ? "Placar exato do 2º tempo"
+            : "Placar exato",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("ht/ft") || marketName.includes("half time/full time") || marketName.includes("interval/final")) {
+    return {
+      marketName: "Intervalo/Final",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("qualify") || marketName.includes("advance") || marketName.includes("classify")) {
+    return {
+      marketName: "Classificar / Avançar",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("champion") || marketName.includes("outright")) {
+    return {
+      marketName: "Campeão",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("win to nil")) {
+    return {
+      marketName: "Vence sem sofrer gol",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("margin")) {
+    return {
+      marketName: "Margem de vitória",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("scorecast") || marketName.includes("wincast") || marketName.includes("timecast")) {
+    return {
+      marketName: "Combinação com marcador",
+      selection: candidate.selection,
+    };
+  }
 
   if (candidate.marketCategory === "halves" && marketName.includes("winner")) {
     if (selectionLower === candidate.homeTeam.toLowerCase()) {
@@ -560,11 +628,162 @@ function buildMarketPresentation(candidate: RawCandidate) {
     };
   }
 
+  if (marketName.includes("team to score first")) {
+    return {
+      marketName: "Time marca primeiro",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("team to score last")) {
+    return {
+      marketName: "Time marca por último",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("team to score next")) {
+    return {
+      marketName: "Time marca o próximo gol",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("score a goal")) {
+    return {
+      marketName:
+        candidate.marketCategory === "halves"
+          ? `${halfLabel} - time marca`
+          : "Time marca",
+      selection: candidate.selection,
+    };
+  }
+
   if ((marketName.includes("both teams") || marketName.includes("btts")) && direction) {
     return {
       marketName: "Ambos marcam",
       selection:
         direction === "no" ? "Ambos os times nao marcam" : "Ambos os times marcam",
+    };
+  }
+
+  if (marketName.includes("to score in both halves")) {
+    return {
+      marketName: "Gol nos dois tempos",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("highest scoring half")) {
+    return {
+      marketName: "Mais gols no 1º ou 2º tempo",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("exact goals")) {
+    return {
+      marketName:
+        candidate.marketCategory === "halves"
+          ? `Total exato de gols no ${halfLabel}`
+          : "Total exato de gols",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("odd/even")) {
+    return {
+      marketName:
+        candidate.marketCategory === "corners"
+          ? "Escanteios ímpar/par"
+          : candidate.marketCategory === "cards"
+            ? "Cartões ímpar/par"
+            : "Gols ímpar/par",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("time of first goal")) {
+    return {
+      marketName: "Tempo do 1º gol",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("first goal scorer")) {
+    return {
+      marketName: "Primeiro a marcar",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("last goal scorer")) {
+    return {
+      marketName: "Último a marcar",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("anytime goal scorer")) {
+    return {
+      marketName: "Marca a qualquer momento",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("player assists")) {
+    return {
+      marketName: "Jogador faz assistência",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("player to be booked")) {
+    return {
+      marketName: "Jogador recebe cartão",
+      selection: candidate.selection,
+    };
+  }
+
+  if (marketName.includes("penalty")) {
+    return {
+      marketName: "Mercado de pênalti",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "corners" && marketName.includes("race to")) {
+    return {
+      marketName: "Race to escanteios",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "corners" && marketName.includes("next")) {
+    return {
+      marketName: "Próximo escanteio",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "cards" && marketName.includes("first card")) {
+    return {
+      marketName: "Primeiro cartão",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "cards" && marketName.includes("next")) {
+    return {
+      marketName: "Próximo cartão",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "cards" && marketName.includes("red card")) {
+    return {
+      marketName: "Cartão vermelho no jogo",
+      selection: candidate.selection,
     };
   }
 
@@ -589,6 +808,65 @@ function buildMarketPresentation(candidate: RawCandidate) {
       marketName: marketName.includes("target") ? "Chutes no alvo" : "Total de chutes",
       selection: buildThresholdLabel(direction, lineText, "na linha monitorada", shotUnit),
     };
+  }
+
+  if (candidate.marketCategory === "stats" && isOverUnderDirection(direction) && lineText) {
+    const statLabel = inferStatsLabel(marketName);
+    return {
+      marketName: statLabel.marketName,
+      selection: buildThresholdLabel(direction, lineText, "na linha monitorada", statLabel.unit),
+    };
+  }
+
+  if (candidate.marketCategory === "players" && isOverUnderDirection(direction) && lineText) {
+    if (marketName.includes("shot") && marketName.includes("target")) {
+      return {
+        marketName: "Jogador com chutes no alvo",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "chute no alvo"),
+      };
+    }
+    if (marketName.includes("shot")) {
+      return {
+        marketName: "Jogador com chutes",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "chute"),
+      };
+    }
+    if (marketName.includes("assist")) {
+      return {
+        marketName: "Jogador com assistência",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "assistência"),
+      };
+    }
+    if (marketName.includes("pass")) {
+      return {
+        marketName: "Jogador com passes",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "passe"),
+      };
+    }
+    if (marketName.includes("foul")) {
+      return {
+        marketName: "Jogador com faltas cometidas",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "falta"),
+      };
+    }
+    if (marketName.includes("tackle")) {
+      return {
+        marketName: "Jogador com desarmes",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "desarme"),
+      };
+    }
+    if (marketName.includes("interception")) {
+      return {
+        marketName: "Jogador com interceptações",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "interceptação"),
+      };
+    }
+    if (marketName.includes("save")) {
+      return {
+        marketName: "Goleiro com defesas",
+        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "defesa"),
+      };
+    }
   }
 
   if (candidate.marketCategory === "goals" && isOverUnderDirection(direction) && lineText) {
@@ -629,6 +907,13 @@ function buildMarketPresentation(candidate: RawCandidate) {
   if (candidate.marketCategory === "shots") {
     return {
       marketName: "Mercado de chutes",
+      selection: candidate.selection,
+    };
+  }
+
+  if (candidate.marketCategory === "stats") {
+    return {
+      marketName: inferStatsLabel(marketName).marketName,
       selection: candidate.selection,
     };
   }
@@ -2080,7 +2365,8 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
         predictionPulse = "cartoes combinam disciplina recente, faltas e perfil de confronto";
       } else if (
         candidate.marketCategory === "players" ||
-        candidate.marketCategory === "shots"
+        candidate.marketCategory === "shots" ||
+        candidate.marketCategory === "stats"
       ) {
         const referencedPlayer =
           findReferencedPlayer(candidate.selection, homeProfile.players) ??
@@ -2098,12 +2384,16 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
           predictionPulse =
             candidate.marketCategory === "shots"
               ? `${referencedPlayer.name} entrou no modelo por minutos e volume de finalizacao individual`
+              : candidate.marketCategory === "stats"
+                ? `${referencedPlayer.name} entrou no modelo como prop estatística individual monitorada`
               : `${referencedPlayer.name} entrou no modelo por minutos, volume individual e papel no time`;
         } else {
           modelProbability += getMarketStabilityBias(candidate.marketCategory) * 0.16;
           predictionPulse =
             candidate.marketCategory === "shots"
               ? "mercado de chutes sem atleta claramente identificado no feed"
+              : candidate.marketCategory === "stats"
+                ? "mercado estatístico mantido perto da linha implicita por falta de assinatura mais forte"
               : "player prop sem atleta claramente identificado no feed";
         }
       } else {
@@ -2139,7 +2429,9 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
   if (!lineupsReady) modelProbability -= 0.018;
   if (homeProfile.structuralAbsences.length + awayProfile.structuralAbsences.length >= 2) modelProbability -= 0.008;
   if (
-    (candidate.marketCategory === "players" || candidate.marketCategory === "shots") &&
+    (candidate.marketCategory === "players" ||
+      candidate.marketCategory === "shots" ||
+      candidate.marketCategory === "stats") &&
     !lineupsReady
   ) {
     modelProbability -= 0.012;
@@ -2188,6 +2480,7 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
       (lineupsReady ? 0 : 0.1) +
       (candidate.marketCategory === "players" ? 0.1 : 0) +
       (candidate.marketCategory === "shots" ? 0.07 : 0) +
+      (candidate.marketCategory === "stats" ? 0.08 : 0) +
       (candidate.marketCategory === "cards" ? 0.06 : 0) +
       weatherFlags.caution.length * 0.025 +
       (homeProfile.structuralAbsences.length + awayProfile.structuralAbsences.length) * 0.02 +

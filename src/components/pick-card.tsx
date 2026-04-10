@@ -22,6 +22,7 @@ function categoryAccent(category: AnalysisPick["marketCategory"]) {
   if (category === "result") return { color: "#A78BFA", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.25)" };
   if (category === "corners") return { color: "#FBBF24", bg: "rgba(251,191,36,0.12)", border: "rgba(251,191,36,0.25)" };
   if (category === "cards") return { color: "#FB7185", bg: "rgba(251,113,133,0.12)", border: "rgba(251,113,133,0.25)" };
+  if (category === "stats") return { color: "#818CF8", bg: "rgba(129,140,248,0.12)", border: "rgba(129,140,248,0.25)" };
   return { color: "#60A5FA", bg: "rgba(96,165,250,0.12)", border: "rgba(96,165,250,0.25)" };
 }
 

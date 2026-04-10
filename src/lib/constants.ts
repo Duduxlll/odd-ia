@@ -72,6 +72,34 @@ export const MARKET_RULES: MarketRule[] = [
     stabilityBias: -0.01,
   },
   {
+    id: "stats",
+    label: "Estatísticas",
+    description: "Faltas, impedimentos, passes, desarmes, laterais, tiros de meta e outras linhas.",
+    accent: "from-blue-500 to-indigo-500",
+    patterns: [
+      /offside/i,
+      /offsides/i,
+      /pass/i,
+      /passes/i,
+      /tackle/i,
+      /tackles/i,
+      /interception/i,
+      /interceptions/i,
+      /foul/i,
+      /fouls/i,
+      /throw.?in/i,
+      /throw ins/i,
+      /goal kicks?/i,
+      /goal kick/i,
+      /saves?/i,
+      /keeper saves?/i,
+      /goalkeeper saves?/i,
+      /clearances?/i,
+      /blocks?/i,
+    ],
+    stabilityBias: -0.03,
+  },
+  {
     id: "result",
     label: "Resultado",
     description: "1x2, dupla chance, empate anula e vencedor do jogo.",
@@ -83,6 +111,21 @@ export const MARKET_RULES: MarketRule[] = [
       /draw no bet/i,
       /home\/away/i,
       /match/i,
+      /qualify/i,
+      /to qualify/i,
+      /advance/i,
+      /classify/i,
+      /champion/i,
+      /outright/i,
+      /win to nil/i,
+      /margin/i,
+      /correct score/i,
+      /scorecast/i,
+      /wincast/i,
+      /timecast/i,
+      /ht\/ft/i,
+      /half time\/full time/i,
+      /interval\/final/i,
     ],
     stabilityBias: 0.12,
   },
@@ -112,10 +155,24 @@ export const MARKET_RULES: MarketRule[] = [
       /anytime goal scorer/i,
       /first goal scorer/i,
       /last goal scorer/i,
+      /first scorer/i,
+      /last scorer/i,
       /goal scorer/i,
+      /to score/i,
+      /hat.?trick/i,
+      /2\+ goals/i,
+      /two or more goals/i,
       /player assists?/i,
       /player fouls committed/i,
       /player to be booked/i,
+      /player shots?/i,
+      /player shots on target/i,
+      /player passes?/i,
+      /player tackles?/i,
+      /player interceptions?/i,
+      /player saves?/i,
+      /man of the match/i,
+      /best player/i,
       /player singles/i,
       /player triples/i,
     ],
@@ -126,7 +183,22 @@ export const MARKET_RULES: MarketRule[] = [
     label: "Gols",
     description: "Over/under, ambas marcam e totais de time.",
     accent: "from-amber-500 to-orange-500",
-    patterns: [/goals? over\/under/i, /goal/i, /both teams/i, /btts/i],
+    patterns: [
+      /goals? over\/under/i,
+      /goal/i,
+      /both teams/i,
+      /btts/i,
+      /odd\/even/i,
+      /multigoals/i,
+      /exact goals/i,
+      /goal line/i,
+      /goal in both halves/i,
+      /time of first goal/i,
+      /penalty/i,
+      /own goal/i,
+      /header/i,
+      /free kick/i,
+    ],
     stabilityBias: 0.1,
   },
 ];
@@ -205,6 +277,63 @@ export const VERDICT_COPY: Record<
 };
 
 export function resolveMarketCategory(name: string): MarketCategoryId | null {
+  const normalized = name.toLowerCase();
+
+  if (
+    /\bplayer\b/.test(normalized) &&
+    /(shot|assist|pass|tackle|interception|foul|save|booked|card)/.test(normalized)
+  ) {
+    return "players";
+  }
+
+  if (/corner|multicorners/.test(normalized)) {
+    return "corners";
+  }
+
+  if (/card|yellow|red|booked|rcard/.test(normalized)) {
+    return "cards";
+  }
+
+  if (
+    /offside|offsides|pass|passes|tackle|tackles|interception|interceptions|foul|fouls|throw.?in|throw ins|goal kicks?|goal kick|keeper saves?|goalkeeper saves?|clearances?|blocks?/.test(
+      normalized,
+    )
+  ) {
+    return "stats";
+  }
+
+  if (
+    /anytime goal scorer|first goal scorer|last goal scorer|first scorer|last scorer|goal scorer|to score|hat.?trick|player assists?|player to be booked|player singles|player triples|man of the match|best player/.test(
+      normalized,
+    )
+  ) {
+    return "players";
+  }
+
+  if (
+    /shots on target|shot on target|shot.?on.?goal|shotongoal|total shots|shots|attempts/.test(
+      normalized,
+    )
+  ) {
+    return "shots";
+  }
+
+  if (
+    /first half|1st half|second half|2nd half|halftime|half time|firsthalf|secondhalf|ht\/ft|half time\/full time|interval\/final|highest scoring half/.test(
+      normalized,
+    )
+  ) {
+    return "halves";
+  }
+
+  if (
+    /total - away|total - home|team total|home total|away total|team to score first|team to score last|team to score next|team score a goal|to score in both halves by teams|both teams score 2\+/.test(
+      normalized,
+    )
+  ) {
+    return "team_totals";
+  }
+
   for (const rule of MARKET_RULES) {
     if (rule.patterns.some((pattern) => pattern.test(name))) {
       return rule.id;

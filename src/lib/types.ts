@@ -7,6 +7,7 @@ export type MarketCategoryId =
   | "corners"
   | "cards"
   | "shots"
+  | "stats"
   | "players";
 
 export interface AnalysisFilters {
