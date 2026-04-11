@@ -263,7 +263,14 @@ export async function reviewPicksWithOpenAI(
         },
       },
     },
-    { timeout: 12 * 60 * 1000 },
+    {
+      timeout:
+        filters.reasoningEffort === "low"
+          ? 3 * 60 * 1000
+          : filters.reasoningEffort === "medium"
+            ? 6 * 60 * 1000
+            : 10 * 60 * 1000,
+    },
   );
 
   const parsed = JSON.parse(response.output_text) as OpenAIReview;
