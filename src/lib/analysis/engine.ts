@@ -2830,6 +2830,7 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
 }
 
 function createFixtureContextLoader(filters: AnalysisFilters) {
+  const isLowEffort = filters.reasoningEffort === "low";
   const cache = new Map<string, Promise<FixtureContext>>();
   const standingsCache = new Map<string, Promise<ApiFootballStandingEntry[]>>();
   const teamCache = new Map<string, Promise<TeamContext>>();
@@ -2879,13 +2880,14 @@ function createFixtureContextLoader(filters: AnalysisFilters) {
       const [seasonStats, players, recentFixtures, nextFixtures] = await Promise.all([
         fetchTeamStatistics(leagueId, season, teamId, scanDate).catch(() => null),
         fetchTeamPlayers(teamId, season, leagueId, 1).catch(() => []),
-        fetchRecentFixtures(teamId, 6).catch(() => []),
+        fetchRecentFixtures(teamId, isLowEffort ? 4 : 6).catch(() => []),
         fetchNextFixtures(teamId, 3).catch(() => []),
       ]);
 
-      const recentDetailedFixtures = recentFixtures.length
+      // Low effort: skip the sequential detailed-fixtures fetch to cut one round-trip per team.
+      const recentDetailedFixtures = !isLowEffort && recentFixtures.length
         ? await fetchFixturesByIds(recentFixtures.map((fixture) => fixture.fixture.id)).catch(() => recentFixtures)
-        : [];
+        : recentFixtures;
 
       return {
         recentFixtures,
@@ -2909,9 +2911,9 @@ function createFixtureContextLoader(filters: AnalysisFilters) {
     }
 
     const request = (async () => {
-      const recentLeagueFixtures = await fetchLeagueRecentFixtures(leagueId, season, 10, "FT").catch(() => []);
-      if (!recentLeagueFixtures.length) {
-        return [] as ApiFootballFixture[];
+      const recentLeagueFixtures = await fetchLeagueRecentFixtures(leagueId, season, isLowEffort ? 6 : 10, "FT").catch(() => []);
+      if (!recentLeagueFixtures.length || isLowEffort) {
+        return recentLeagueFixtures as ApiFootballFixture[];
       }
 
       return fetchFixturesByIds(recentLeagueFixtures.map((fixture) => fixture.fixture.id)).catch(
@@ -3026,7 +3028,8 @@ function createFixtureContextLoader(filters: AnalysisFilters) {
           getTeamContext(candidate.homeTeamId, candidate.leagueId, candidate.season, filters.scanDate),
           getTeamContext(candidate.awayTeamId, candidate.leagueId, candidate.season, filters.scanDate),
           getLeagueDetailedFixtures(candidate.leagueId, candidate.season),
-          getVenueProfile(candidate.venueId),
+          // Low effort: skip venue profile (saves 2 sequential API round-trips per venue).
+          isLowEffort ? Promise.resolve(null) : getVenueProfile(candidate.venueId),
           getWeatherSnapshotForFixture(candidate),
         ]);
 
@@ -3548,10 +3551,12 @@ export async function runFootballAnalysis(
   const scanDateLabel = getScanDateLabel(filters.scanDate);
   const baseSeedVolume = env.API_FOOTBALL_FREE_PLAN_MODE
     ? Math.min(Math.max(filters.pickCount * 2, 12), 28)
-    : Math.min(
-        Math.max(filters.pickCount * 5, 40),
-        Math.max(40, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
-      );
+    : filters.reasoningEffort === "low"
+      ? Math.min(Math.max(filters.pickCount * 3, 25), 50)
+      : Math.min(
+          Math.max(filters.pickCount * 5, 40),
+          Math.max(40, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
+        );
   const seedVolume = baseSeedVolume;
   const seededSingles = balanceItemsByCategory(
     rawCandidates,
@@ -3559,10 +3564,12 @@ export async function runFootballAnalysis(
     seedVolume,
     (candidate) => candidate.candidateId,
   );
-  const accumulatorSeedVolume = Math.min(
-    Math.max(filters.pickCount * 4, 24),
-    Math.max(48, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
-  );
+  const accumulatorSeedVolume = filters.reasoningEffort === "low"
+    ? Math.min(Math.max(filters.pickCount * 2, 15), 30)
+    : Math.min(
+        Math.max(filters.pickCount * 4, 24),
+        Math.max(48, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
+      );
   const seededAccumulator = balanceItemsByCategory(
     accumulatorOnlyCandidates,
     filters.marketCategories,
@@ -3608,7 +3615,9 @@ export async function runFootballAnalysis(
     ? balanceItemsByCategory(
         scoredPicks,
         filters.marketCategories,
-        Math.min(Math.max(filters.pickCount * 4, 20), 35),
+        filters.reasoningEffort === "low"
+          ? Math.min(Math.max(filters.pickCount * 2, 10), 20)
+          : Math.min(Math.max(filters.pickCount * 4, 20), 35),
         (pick) => pick.candidateId,
       )
     : balanceItemsByCategory(

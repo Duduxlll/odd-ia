@@ -683,8 +683,8 @@ export function ControlPanel({
                 <div className="grid grid-cols-3 gap-2">
                   {(
                     [
-                      { value: "low", label: "Rápido", sub: "2-4 min" },
-                      { value: "medium", label: "Balanceado", sub: "5-8 min" },
+                      { value: "low", label: "Rápido", sub: "1-3 min" },
+                      { value: "medium", label: "Balanceado", sub: "4-8 min" },
                       { value: "high", label: "Profundo", sub: "15-25 min" },
                     ] as const
                   ).map((option) => (
