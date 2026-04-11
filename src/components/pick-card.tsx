@@ -275,7 +275,7 @@ export function PickCard({
         {/* Main info + metrics block */}
         <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h3 className="text-lg font-bold tracking-[-0.03em] text-white sm:text-xl">
+            <h3 className="text-base font-bold tracking-[-0.03em] text-white sm:text-lg xl:text-xl">
               {pick.selection}
             </h3>
             <p className="mt-0.5 text-[11px] font-medium text-slate-400">
@@ -284,7 +284,7 @@ export function PickCard({
             <p className="mt-1 text-xs text-slate-500">
               {pick.fixtureLabel} · {formatDateTimeInSaoPaulo(pick.fixtureDate)}
             </p>
-            <p className="mt-0.5 text-[10px] leading-5 text-slate-600">
+            <p className="mt-0.5 break-words text-[10px] leading-5 text-slate-600">
               Nome técnico: {pick.rawMarketName} · {pick.rawSelectionValue}
               {pick.rawHandicap ? ` · linha ${pick.rawHandicap}` : ""}
             </p>

@@ -31,15 +31,15 @@ function Metric({
 }) {
   return (
     <div
-      className="rounded-2xl p-4"
+      className="rounded-2xl p-3 sm:p-4"
       style={{
         backgroundColor: "#111a2c",
         border: "1px solid #1e2d42",
       }}
     >
-      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-[-0.05em] text-white">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{detail}</p>
+      <p className="text-[9px] uppercase tracking-[0.18em] text-slate-500 sm:text-[10px]">{label}</p>
+      <p className="mt-1.5 text-xl font-semibold tracking-[-0.05em] text-white sm:mt-2 sm:text-2xl">{value}</p>
+      <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-500 sm:text-xs sm:leading-5">{detail}</p>
     </div>
   );
 }
@@ -149,7 +149,7 @@ export function HeroPanel({
     <motion.section
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="relative overflow-hidden rounded-[32px] p-6 sm:p-8"
+      className="relative overflow-hidden rounded-[24px] p-4 sm:rounded-[32px] sm:p-6 xl:p-8"
       style={{
         backgroundColor: "#0B1120",
         border: "1px solid #1a2840",
@@ -205,7 +205,7 @@ export function HeroPanel({
               >
                 Radar de valor
               </p>
-              <h1 className="mt-3 text-[2.5rem] leading-[0.93] tracking-[-0.05em] text-white sm:text-[3rem]">
+              <h1 className="mt-3 text-[1.9rem] leading-[0.95] tracking-[-0.05em] text-white sm:text-[2.5rem] xl:text-[3rem]">
                 <span className="font-display italic" style={{ color: "#FBBF24" }}>
                   Análise clara,
                 </span>{" "}

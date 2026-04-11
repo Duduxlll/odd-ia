@@ -350,7 +350,7 @@ export function DashboardShell({
 
   return (
     <div
-      className="relative min-h-screen px-4 py-5 sm:px-6 lg:px-8 xl:px-10"
+      className="relative min-h-screen px-3 py-4 sm:px-5 sm:py-5 lg:px-8 xl:px-10"
       style={{ backgroundColor: "#060A14" }}
     >
       <div className="relative mx-auto flex w-full max-w-[1560px] flex-col gap-5">
@@ -381,31 +381,36 @@ export function DashboardShell({
 
         {/* Hero + Control panel */}
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.18fr)_390px]">
-          <HeroPanel
-            run={run}
-            activeJob={activeJob}
-            config={initialSnapshot.config}
-            availableLeagueCount={initialSnapshot.supportedLeagues.length}
-            availableBookmakerCount={initialSnapshot.supportedBookmakers.length}
-            diagnostics={currentDiagnostics}
-          />
-          <ControlPanel
-            config={initialSnapshot.config}
-            filters={filters}
-            leagues={initialSnapshot.supportedLeagues}
-            regulatedBookmakerCount={initialSnapshot.supportedBookmakers.length}
-            markets={initialSnapshot.supportedMarkets}
-            isPending={isAnalyzing}
-            isRestarting={isRestarting}
-            isClearing={isClearing}
-            onRun={handleAnalyze}
-            onRestart={handleForceRestart}
-            onClear={handleClear}
-            onChange={setFilters}
-            onToggleLeague={toggleLeague}
-            onToggleMarket={toggleMarket}
-            diagnostics={currentDiagnostics}
-          />
+          {/* No mobile o ControlPanel vem primeiro (order-first) para o botão de análise aparecer antes do hero */}
+          <div className="order-2 xl:order-1">
+            <HeroPanel
+              run={run}
+              activeJob={activeJob}
+              config={initialSnapshot.config}
+              availableLeagueCount={initialSnapshot.supportedLeagues.length}
+              availableBookmakerCount={initialSnapshot.supportedBookmakers.length}
+              diagnostics={currentDiagnostics}
+            />
+          </div>
+          <div className="order-1 xl:order-2">
+            <ControlPanel
+              config={initialSnapshot.config}
+              filters={filters}
+              leagues={initialSnapshot.supportedLeagues}
+              regulatedBookmakerCount={initialSnapshot.supportedBookmakers.length}
+              markets={initialSnapshot.supportedMarkets}
+              isPending={isAnalyzing}
+              isRestarting={isRestarting}
+              isClearing={isClearing}
+              onRun={handleAnalyze}
+              onRestart={handleForceRestart}
+              onClear={handleClear}
+              onChange={setFilters}
+              onToggleLeague={toggleLeague}
+              onToggleMarket={toggleMarket}
+              diagnostics={currentDiagnostics}
+            />
+          </div>
         </section>
 
         {/* Status compacto + Accumulator */}

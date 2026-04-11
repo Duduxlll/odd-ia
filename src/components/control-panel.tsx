@@ -183,7 +183,7 @@ export function ControlPanel({
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.06 }}
-      className="rounded-[32px] p-5"
+      className="rounded-[28px] p-4 sm:rounded-[32px] sm:p-5"
       style={{
         backgroundColor: "#0C1424",
         border: "1px solid #1a2840",
