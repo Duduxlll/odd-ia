@@ -56,11 +56,13 @@ import type {
 import {
   clamp,
   formatOdd,
+  getScanDateLabel,
   getTodayDateInSaoPaulo,
   mapLimit,
   mean,
   parseDecimal,
   parsePercentString,
+  resolveAllowedScanDate,
   slugify,
 } from "@/lib/utils";
 
@@ -253,7 +255,7 @@ function normalizeFilters(filters: Partial<AnalysisFilters> | undefined): Analys
   return {
     ...DEFAULT_FILTERS,
     ...filters,
-    scanDate: getTodayDateInSaoPaulo(),
+    scanDate: resolveAllowedScanDate(filters?.scanDate),
     horizonHours: 24,
     leagueIds: Array.isArray(filters?.leagueIds) ? filters.leagueIds : DEFAULT_FILTERS.leagueIds,
     bookmakerIds: Array.isArray(filters?.bookmakerIds)
@@ -3389,6 +3391,7 @@ export async function runFootballAnalysis(
   const bookmakerScopeLabel = env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER
     ? env.API_FOOTBALL_PRIMARY_BOOKMAKER_NAME
     : "mercado agregado";
+  const scanDateLabel = getScanDateLabel(filters.scanDate);
   const baseSeedVolume = env.API_FOOTBALL_FREE_PLAN_MODE
     ? Math.min(Math.max(filters.pickCount * 2, 12), 28)
     : Math.min(
@@ -3419,13 +3422,13 @@ export async function runFootballAnalysis(
     : eligibleFixtures.length === 0
       ? filters.leagueIds.length
         ? remainingTodayFixtures.length
-          ? `Hoje ainda existem ${remainingTodayFixtures.length} jogos no total até 23:59, mas nenhuma das ligas escolhidas tem partidas futuras nesse recorte.`
-          : "Hoje não restam partidas futuras até 23:59 no radar."
-        : "Hoje não restam partidas futuras até 23:59 no radar."
+          ? `${scanDateLabel} ainda existem ${remainingTodayFixtures.length} jogos no total nesse recorte, mas nenhuma das ligas escolhidas tem partidas futuras nele.`
+          : `${scanDateLabel} não há partidas futuras dentro da janela selecionada.`
+        : `${scanDateLabel} não há partidas futuras dentro da janela selecionada.`
       : env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER && !oddsEntries.length
         ? `A API-Football não retornou mercados da ${bookmakerScopeLabel} para o recorte selecionado. Nesse caso, o radar não tem como montar picks mesmo com fixtures elegíveis.`
         : !rawCandidates.length
-          ? `Existem ${eligibleFixtures.length} fixtures elegíveis hoje, mas nenhuma odd elegível entrou no filtro atual dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
+          ? `Existem ${eligibleFixtures.length} fixtures elegíveis em ${scanDateLabel.toLowerCase()}, mas nenhuma odd elegível entrou no filtro atual dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
           : `Foram encontrados mercados com odds, mas nenhum passou no corte final de valor dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`;
   await reportProgress("Pontuando valor, risco e shortlist final.");
   const aiReviewSeed = aiEnabled

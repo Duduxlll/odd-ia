@@ -5,11 +5,18 @@ import { Brain, Database, Layers3, Radar, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 
 import type { AnalysisJob, AnalysisRun, ConfigStatus } from "@/lib/types";
-import { formatDateTimeInSaoPaulo, formatOdd } from "@/lib/utils";
+import {
+  formatDateTimeInSaoPaulo,
+  formatOdd,
+  getScanDateLabel,
+  getScanDateLabelLower,
+  getTomorrowDateInSaoPaulo,
+} from "@/lib/utils";
 
 type HeroDiagnostics = {
-  totalRemainingToday: number;
-  selectedRemainingToday: number;
+  scanDate: string;
+  totalRemainingInWindow: number;
+  selectedRemainingInWindow: number;
   missingSelectedLeagues: Array<{ id: number; name: string; country: string; emphasis: string }>;
 };
 
@@ -127,6 +134,8 @@ export function HeroPanel({
 }) {
   const jobPending = activeJob?.status === "queued" || activeJob?.status === "running";
   const filters = activeJob?.filters ?? run?.filters;
+  const scanDateLabel = filters ? getScanDateLabel(filters.scanDate) : "Hoje";
+  const scanDateLabelLower = filters ? getScanDateLabelLower(filters.scanDate) : "hoje";
   const leaguesLabel = filters
     ? filters.leagueIds.length
       ? `${filters.leagueIds.length} ligas ativas`
@@ -183,7 +192,11 @@ export function HeroPanel({
           <ScopePill
             label={config.singleBookmakerMode ? config.primaryBookmakerName : "Multi-casa"}
           />
-          {filters ? <ScopePill label={`${filters.horizonHours}h`} /> : null}
+          {filters ? (
+            <ScopePill
+              label={filters.scanDate === getTomorrowDateInSaoPaulo() ? "Amanhã" : "Hoje"}
+            />
+          ) : null}
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_310px]">
@@ -227,11 +240,11 @@ export function HeroPanel({
                 label="Fixtures"
                 value={String(run?.fixturesScanned ?? 0)}
                 detail={
-                  diagnostics.selectedRemainingToday
-                    ? `${diagnostics.selectedRemainingToday} restantes hoje no escopo`
-                    : diagnostics.totalRemainingToday
-                      ? "sem jogos futuros nas ligas escolhidas"
-                      : "sem jogos futuros hoje"
+                  diagnostics.selectedRemainingInWindow
+                    ? `${diagnostics.selectedRemainingInWindow} restantes em ${scanDateLabelLower}`
+                    : diagnostics.totalRemainingInWindow
+                      ? `sem jogos futuros nas ligas escolhidas em ${scanDateLabelLower}`
+                      : `sem jogos futuros em ${scanDateLabelLower}`
                 }
               />
               <Metric
@@ -262,11 +275,11 @@ export function HeroPanel({
                   : activeJob?.status === "queued"
                     ? "O job já foi persistido na fila e o worker dedicado vai assumir o scan. Isso desacopla o clique do processamento pesado."
                   : run?.executiveSummary ??
-                    diagnostics.selectedRemainingToday
-                    ? `Hoje restam ${diagnostics.selectedRemainingToday} jogos futuros dentro do escopo atual e ${diagnostics.totalRemainingToday} no total do dia.`
-                    : diagnostics.totalRemainingToday
-                      ? "Hoje ainda há jogos no total, mas as ligas selecionadas ficaram sem partidas futuras até 23:59."
-                      : "Hoje não há mais jogos futuros até 23:59. O radar precisa de fixtures restantes para gerar picks."}
+                    diagnostics.selectedRemainingInWindow
+                    ? `${scanDateLabel} restam ${diagnostics.selectedRemainingInWindow} jogos futuros dentro do escopo atual e ${diagnostics.totalRemainingInWindow} no total desse recorte.`
+                    : diagnostics.totalRemainingInWindow
+                      ? `${scanDateLabel} ainda há jogos no total, mas as ligas selecionadas ficaram sem partidas futuras nesse recorte.`
+                      : `${scanDateLabel} não há mais jogos futuros nesse recorte. O radar precisa de fixtures restantes para gerar picks.`}
               </p>
             </div>
           </div>

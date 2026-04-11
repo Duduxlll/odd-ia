@@ -18,7 +18,12 @@ import {
   fetchAvailableLeagues,
 } from "@/lib/providers/api-football";
 import type { OperationsStatus, PerformanceSummary } from "@/lib/types";
-import { getTodayDateInSaoPaulo, withTimeoutFallback } from "@/lib/utils";
+import {
+  getDateKeyFromIsoInSaoPaulo,
+  getTodayDateInSaoPaulo,
+  getTomorrowDateInSaoPaulo,
+  withTimeoutFallback,
+} from "@/lib/utils";
 
 const EMPTY_PERFORMANCE: PerformanceSummary = {
   totalTracked: 0,
@@ -64,7 +69,8 @@ const EMPTY_OPERATIONS: OperationsStatus = {
 export async function getDashboardSnapshot(username: string) {
   await ensureSchema();
   const today = getTodayDateInSaoPaulo();
-  const [latestRun, performance, dashboardState, operations, allLeagues, allBookmakers, todayFixtures] =
+  const tomorrow = getTomorrowDateInSaoPaulo();
+  const [latestRun, performance, dashboardState, operations, allLeagues, allBookmakers, fixturesToday, fixturesTomorrow] =
     await Promise.all([
       withTimeoutFallback(getLatestAnalysisRun(username), 8000, null),
       withTimeoutFallback(getPerformanceSummary(username), 6000, EMPTY_PERFORMANCE),
@@ -86,6 +92,11 @@ export async function getDashboardSnapshot(username: string) {
       ),
       withTimeoutFallback(
         getCachedFixturesByDate(today).catch(() => []),
+        4000,
+        [],
+      ),
+      withTimeoutFallback(
+        getCachedFixturesByDate(tomorrow).catch(() => []),
         4000,
         [],
       ),
@@ -113,7 +124,7 @@ export async function getDashboardSnapshot(username: string) {
     supportedLeagues: mergedLeagues,
     supportedBookmakers: allBookmakers,
     supportedMarkets: SUPPORTED_MARKETS,
-    todayFixtures: todayFixtures
+    scanFixtures: [...fixturesToday, ...fixturesTomorrow]
       .filter((fixture) => {
         const kickoffAt = new Date(fixture.fixture.date).getTime();
         return Number.isFinite(kickoffAt) && kickoffAt > Date.now();
@@ -124,6 +135,7 @@ export async function getDashboardSnapshot(username: string) {
         leagueName: fixture.league.name,
         leagueCountry: fixture.league.country,
         kickoffAt: fixture.fixture.date,
+        scanDate: getDateKeyFromIsoInSaoPaulo(fixture.fixture.date),
         statusShort: fixture.fixture.status?.short ?? null,
       })),
   };

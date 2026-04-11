@@ -4,7 +4,7 @@ import type {
   SupportedLeague,
   SupportedMarketCategory,
 } from "@/lib/types";
-import { getTodayDateInSaoPaulo } from "@/lib/utils";
+import { getTodayDateInSaoPaulo, resolveAllowedScanDate } from "@/lib/utils";
 
 type MarketRule = SupportedMarketCategory & {
   patterns: RegExp[];
@@ -228,12 +228,10 @@ export const DEFAULT_FILTERS: AnalysisFilters = {
 export function normalizeAnalysisFilters(
   filters?: Partial<AnalysisFilters> | null,
 ): AnalysisFilters {
-  const today = getTodayDateInSaoPaulo();
-
   return {
     ...DEFAULT_FILTERS,
     ...filters,
-    scanDate: today,
+    scanDate: resolveAllowedScanDate(filters?.scanDate),
     horizonHours: 24,
     leagueIds: Array.isArray(filters?.leagueIds)
       ? filters.leagueIds

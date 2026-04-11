@@ -27,7 +27,13 @@ import type {
   MarketCategoryId,
   SupportedLeague,
 } from "@/lib/types";
-import { formatDateTimeInSaoPaulo, formatOdd, formatPercent } from "@/lib/utils";
+import {
+  formatDateTimeInSaoPaulo,
+  formatOdd,
+  formatPercent,
+  getScanDateLabel,
+  getScanDateLabelLower,
+} from "@/lib/utils";
 
 export function DashboardShell({
   initialSnapshot,
@@ -58,18 +64,34 @@ export function DashboardShell({
   const isActiveJobPending = activeJob?.status === "queued" || activeJob?.status === "running";
   const isAnalyzing = isSubmittingAnalysis || isActiveJobPending;
   const currentDiagnostics = useMemo(
-    () => buildScanDiagnostics(initialSnapshot.todayFixtures, initialSnapshot.supportedLeagues, filters.leagueIds, nowMs),
-    [filters.leagueIds, initialSnapshot.supportedLeagues, initialSnapshot.todayFixtures, nowMs],
+    () =>
+      buildScanDiagnostics(
+        initialSnapshot.scanFixtures,
+        initialSnapshot.supportedLeagues,
+        filters.scanDate,
+        filters.leagueIds,
+        nowMs,
+      ),
+    [filters.leagueIds, filters.scanDate, initialSnapshot.scanFixtures, initialSnapshot.supportedLeagues, nowMs],
   );
   const runDiagnostics = useMemo(
     () =>
       buildScanDiagnostics(
-        initialSnapshot.todayFixtures,
+        initialSnapshot.scanFixtures,
         initialSnapshot.supportedLeagues,
+        run?.filters.scanDate ?? filters.scanDate,
         run?.filters.leagueIds ?? filters.leagueIds,
         nowMs,
       ),
-    [filters.leagueIds, initialSnapshot.supportedLeagues, initialSnapshot.todayFixtures, nowMs, run?.filters.leagueIds],
+    [
+      filters.leagueIds,
+      filters.scanDate,
+      initialSnapshot.scanFixtures,
+      initialSnapshot.supportedLeagues,
+      nowMs,
+      run?.filters.leagueIds,
+      run?.filters.scanDate,
+    ],
   );
   const timeoutByVolume = Boolean(error && /timeout por volume|tempo limite da vercel/i.test(error));
   const noFixtureMessage = getNoFixtureMessage(currentDiagnostics, filters.leagueIds.length > 0);
@@ -385,7 +407,7 @@ export function DashboardShell({
                     : "O scan está em andamento com os filtros atuais. Você pode atualizar a página, e o radar continua processando até gravar a rodada completa."}
                 </p>
                 <AlertBlock tone="amber" message={activeJob.message} />
-                {currentDiagnostics.selectedRemainingToday === 0 ? (
+                {currentDiagnostics.selectedRemainingInWindow === 0 ? (
                   <AlertBlock
                     tone="amber"
                     title="Sem fixtures no escopo"
@@ -422,7 +444,7 @@ export function DashboardShell({
               </div>
             ) : (
               <div className="space-y-4">
-                {currentDiagnostics.selectedRemainingToday === 0 ? (
+                {currentDiagnostics.selectedRemainingInWindow === 0 ? (
                   <AlertBlock
                     tone="amber"
                     title="Sem fixtures no escopo"
@@ -915,55 +937,65 @@ function formatSigned(value: number) {
 }
 
 type ScanDiagnostics = {
-  totalRemainingToday: number;
-  selectedRemainingToday: number;
+  scanDate: string;
+  totalRemainingInWindow: number;
+  selectedRemainingInWindow: number;
   missingSelectedLeagues: SupportedLeague[];
 };
 
 function buildScanDiagnostics(
-  todayFixtures: DashboardSnapshot["todayFixtures"],
+  scanFixtures: DashboardSnapshot["scanFixtures"],
   supportedLeagues: SupportedLeague[],
+  scanDate: string,
   selectedLeagueIds: number[],
   nowMs: number,
 ): ScanDiagnostics {
-  const remainingToday = todayFixtures.filter((fixture) => {
+  const fixturesInWindow = scanFixtures.filter((fixture) => {
+    if (fixture.scanDate !== scanDate) {
+      return false;
+    }
+
     const kickoffAt = new Date(fixture.kickoffAt).getTime();
     return Number.isFinite(kickoffAt) && kickoffAt > nowMs;
   });
 
-  const selectedRemainingToday = selectedLeagueIds.length
-    ? remainingToday.filter((fixture) => selectedLeagueIds.includes(fixture.leagueId))
-    : remainingToday;
-  const activeLeagueIds = new Set(remainingToday.map((fixture) => fixture.leagueId));
+  const selectedRemainingInWindow = selectedLeagueIds.length
+    ? fixturesInWindow.filter((fixture) => selectedLeagueIds.includes(fixture.leagueId))
+    : fixturesInWindow;
+  const activeLeagueIds = new Set(fixturesInWindow.map((fixture) => fixture.leagueId));
   const missingSelectedLeagues = selectedLeagueIds
     .filter((leagueId) => !activeLeagueIds.has(leagueId))
     .map((leagueId) => supportedLeagues.find((league) => league.id === leagueId))
     .filter((league): league is SupportedLeague => Boolean(league));
 
   return {
-    totalRemainingToday: remainingToday.length,
-    selectedRemainingToday: selectedRemainingToday.length,
+    scanDate,
+    totalRemainingInWindow: fixturesInWindow.length,
+    selectedRemainingInWindow: selectedRemainingInWindow.length,
     missingSelectedLeagues,
   };
 }
 
 function getNoFixtureMessage(diagnostics: ScanDiagnostics, usingLeagueFilter: boolean) {
-  if (!diagnostics.totalRemainingToday) {
-    return "Hoje não restam partidas futuras até 23:59. Nesse cenário o radar zera antes mesmo de buscar odds.";
+  const dateLabel = getScanDateLabel(diagnostics.scanDate);
+  const dateLabelLower = getScanDateLabelLower(diagnostics.scanDate);
+
+  if (!diagnostics.totalRemainingInWindow) {
+    return `${dateLabel} não restam partidas futuras dentro da janela selecionada. Nesse cenário o radar zera antes mesmo de buscar odds.`;
   }
 
-  if (usingLeagueFilter && diagnostics.selectedRemainingToday === 0) {
+  if (usingLeagueFilter && diagnostics.selectedRemainingInWindow === 0) {
     const sample = diagnostics.missingSelectedLeagues
       .slice(0, 4)
       .map((league) => league.name)
       .join(", ");
 
     return sample
-      ? `Hoje ainda existem ${diagnostics.totalRemainingToday} jogos no total até 23:59, mas as ligas selecionadas não têm partidas futuras nesse recorte. Ex.: ${sample}.`
-      : `Hoje ainda existem ${diagnostics.totalRemainingToday} jogos no total até 23:59, mas as ligas selecionadas não têm partidas futuras nesse recorte.`;
+      ? `${dateLabel} ainda existem ${diagnostics.totalRemainingInWindow} jogos no total nesse recorte, mas as ligas selecionadas não têm partidas futuras nele. Ex.: ${sample}.`
+      : `${dateLabel} ainda existem ${diagnostics.totalRemainingInWindow} jogos no total nesse recorte, mas as ligas selecionadas não têm partidas futuras nele.`;
   }
 
-  return `Restam ${diagnostics.selectedRemainingToday} jogos futuros hoje dentro do seu escopo atual.`;
+  return `Restam ${diagnostics.selectedRemainingInWindow} jogos futuros em ${dateLabelLower} dentro do seu escopo atual.`;
 }
 
 function getResultDiagnosis(
@@ -984,10 +1016,11 @@ function getResultDiagnosis(
   }
 
   if (run.candidatesScanned === 0) {
+    const scanDateLabelLower = getScanDateLabelLower(run.filters.scanDate);
     return {
       tone: "amber" as const,
       title: "Sem odds elegíveis",
-      message: `O radar encontrou ${run.fixturesScanned} jogos futuros no escopo, mas o feed não devolveu odds elegíveis dentro da faixa ${formatOdd(run.filters.minOdd)}-${formatOdd(run.filters.maxOdd)} para o recorte atual.`,
+      message: `O radar encontrou ${run.fixturesScanned} jogos futuros no escopo, mas o feed não devolveu odds elegíveis dentro da faixa ${formatOdd(run.filters.minOdd)}-${formatOdd(run.filters.maxOdd)} para ${scanDateLabelLower}.`,
     };
   }
 

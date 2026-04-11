@@ -55,13 +55,54 @@ export function formatDateTimeInSaoPaulo(value: string) {
   }).format(new Date(value));
 }
 
-export function getTodayDateInSaoPaulo() {
+function formatDateKeyInSaoPaulo(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).format(value);
+}
+
+export function getTodayDateInSaoPaulo() {
+  return formatDateKeyInSaoPaulo(new Date());
+}
+
+export function getTomorrowDateInSaoPaulo() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return formatDateKeyInSaoPaulo(tomorrow);
+}
+
+export function resolveAllowedScanDate(value?: string | null) {
+  const today = getTodayDateInSaoPaulo();
+  const tomorrow = getTomorrowDateInSaoPaulo();
+
+  return value === tomorrow ? tomorrow : today;
+}
+
+export function getScanDateLabel(scanDate: string) {
+  const today = getTodayDateInSaoPaulo();
+  const tomorrow = getTomorrowDateInSaoPaulo();
+
+  if (scanDate === today) {
+    return "Hoje";
+  }
+
+  if (scanDate === tomorrow) {
+    return "Amanhã";
+  }
+
+  return scanDate;
+}
+
+export function getScanDateLabelLower(scanDate: string) {
+  const label = getScanDateLabel(scanDate);
+  return label === "Hoje" ? "hoje" : label === "Amanhã" ? "amanhã" : label.toLowerCase();
+}
+
+export function getDateKeyFromIsoInSaoPaulo(value: string) {
+  return formatDateKeyInSaoPaulo(new Date(value));
 }
 
 export function slugify(value: string) {

@@ -12,7 +12,12 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { cn } from "@/lib/utils";
+import {
+  cn,
+  getScanDateLabelLower,
+  getTodayDateInSaoPaulo,
+  getTomorrowDateInSaoPaulo,
+} from "@/lib/utils";
 import type {
   AnalysisFilters,
   ConfigStatus,
@@ -23,8 +28,9 @@ import type {
 } from "@/lib/types";
 
 type ControlPanelDiagnostics = {
-  totalRemainingToday: number;
-  selectedRemainingToday: number;
+  scanDate: string;
+  totalRemainingInWindow: number;
+  selectedRemainingInWindow: number;
   missingSelectedLeagues: SupportedLeague[];
 };
 
@@ -132,6 +138,10 @@ export function ControlPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [leagueQuery, setLeagueQuery] = useState("");
   const [bookmakerQuery, setBookmakerQuery] = useState("");
+  const today = getTodayDateInSaoPaulo();
+  const tomorrow = getTomorrowDateInSaoPaulo();
+  const selectedWindow = filters.scanDate === tomorrow ? "tomorrow" : "today";
+  const scanDateLabelLower = getScanDateLabelLower(diagnostics.scanDate);
   const topLeagueIds = leagues.slice(0, 8).map((league) => league.id);
   const normalizedLeagueQuery = leagueQuery.trim().toLowerCase();
   const normalizedBookmakerQuery = bookmakerQuery.trim().toLowerCase();
@@ -213,12 +223,19 @@ export function ControlPanel({
         </Field>
         <Field label="Janela">
           <select
-            value={String(filters.horizonHours)}
-            disabled
+            value={selectedWindow}
+            onChange={(event) =>
+              onChange({
+                ...filters,
+                scanDate: event.target.value === "tomorrow" ? tomorrow : today,
+                horizonHours: 24,
+              })
+            }
             className={inputClass}
-            style={{ ...inputStyle, color: "#94A3B8", opacity: 0.9 }}
+            style={inputStyle}
           >
-            <option value="24">Hoje até 23:59</option>
+            <option value="today">Hoje até 23:59</option>
+            <option value="tomorrow">Amanhã (00:00-23:59)</option>
           </select>
         </Field>
         <Field label="Odd mínima">
@@ -274,25 +291,26 @@ export function ControlPanel({
         className="mt-4 rounded-2xl px-4 py-3 text-xs leading-6"
         style={{
           backgroundColor:
-            diagnostics.selectedRemainingToday > 0
+            diagnostics.selectedRemainingInWindow > 0
               ? "rgba(34,211,238,0.08)"
               : "rgba(251,191,36,0.08)",
           border:
-            diagnostics.selectedRemainingToday > 0
+            diagnostics.selectedRemainingInWindow > 0
               ? "1px solid rgba(34,211,238,0.20)"
               : "1px solid rgba(251,191,36,0.20)",
-          color: diagnostics.selectedRemainingToday > 0 ? "#67E8F9" : "#FCD34D",
+          color: diagnostics.selectedRemainingInWindow > 0 ? "#67E8F9" : "#FCD34D",
         }}
       >
-        {diagnostics.selectedRemainingToday > 0 ? (
+        {diagnostics.selectedRemainingInWindow > 0 ? (
           <>
-            Restam <strong>{diagnostics.selectedRemainingToday}</strong> jogos futuros hoje no seu
-            escopo atual e <strong>{diagnostics.totalRemainingToday}</strong> no total do dia.
+            Restam <strong>{diagnostics.selectedRemainingInWindow}</strong> jogos futuros em{" "}
+            {scanDateLabelLower} no seu escopo atual e{" "}
+            <strong>{diagnostics.totalRemainingInWindow}</strong> no total desse recorte.
           </>
-        ) : diagnostics.totalRemainingToday > 0 ? (
+        ) : diagnostics.totalRemainingInWindow > 0 ? (
           <>
-            Nessas ligas não há partidas futuras hoje até 23:59. Ainda existem{" "}
-            <strong>{diagnostics.totalRemainingToday}</strong> jogos no total do dia.
+            Nessas ligas não há partidas futuras em {scanDateLabelLower}. Ainda existem{" "}
+            <strong>{diagnostics.totalRemainingInWindow}</strong> jogos no total desse recorte.
             {diagnostics.missingSelectedLeagues.length ? (
               <>
                 {" "}Sem jogos futuros agora em:{" "}
@@ -305,7 +323,7 @@ export function ControlPanel({
             ) : null}
           </>
         ) : (
-          <>Hoje não restam partidas futuras até 23:59. O radar zera antes de buscar odds.</>
+          <>Não restam partidas futuras em {scanDateLabelLower}. O radar zera antes de buscar odds.</>
         )}
       </div>
 
