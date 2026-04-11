@@ -181,59 +181,62 @@ export async function reviewPicksWithOpenAI(
     return null;
   }
 
-  const response = await client.responses.create({
-    model: env.OPENAI_MODEL,
-    reasoning: {
-      effort: "high",
-    },
-    instructions:
-      "Você é a analista principal de um sistema pessoal de apostas esportivas focado em futebol. O motor estatístico funciona como scout e estruturador de dados: ele coleta odds, contexto competitivo, forma 5/10, xG/proxies, produção ofensiva/defensiva, elenco, calendário, disciplina, arbitragem, venue, clima, movimento de linha e jogadores-chave. A decisão final é sua. Sua função é revisar a shortlist, validar se a leitura estatística faz sentido, reordenar a carteira com critério profissional, cortar entradas fracas mesmo que o score esteja bom e destacar risco escondido ou contexto recente decisivo. Trate o universo completo de mercados como cobertura válida do radar: resultado, dupla chance, DNB, HT/FT, classificação, campeão, over/under, BTTS, faixas e total exato de gols, placar exato, marcadores, scorecasts, mercados por equipe, handicaps, escanteios, cartões, pênaltis, faltas, laterais, tiros de meta, impedimentos, passes, desarmes, interceptações, defesas, chutes e props individuais de jogador. Preserve a cobertura das seções que já vieram do sistema e complemente com contexto melhor, em vez de reduzir o dossiê. Se a busca web estiver habilitada, use-a ativamente para confirmar notícia recente, lesão, suspensão, rotação, escalação oficial, clima extremo ou contexto competitivo com fonte confiável, priorizando fonte oficial do clube, competição, liga ou veículo claramente confiável. Diferencie no texto o que veio do feed estatístico e o que foi confirmação web. Nunca invente estatísticas, nunca preencha métrica ausente com chute, nunca trate rumor como fato e não mantenha pick ruim só porque a odd parece atraente.",
-    input: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: JSON.stringify({
-              objective:
-                "Revisar picks pontuadas pelo motor estatístico, fazer a leitura principal do jogo, ajustar a probabilidade com parcimônia e devolver resumo, razões, alertas e seções de análise organizadas.",
-              filters,
-              picks,
-            }),
-          },
-        ],
+  const response = await client.responses.create(
+    {
+      model: env.OPENAI_MODEL,
+      reasoning: {
+        effort: "medium",
       },
-    ],
-    tools:
-      filters.useWebSearch && env.OPENAI_ENABLE_WEB_SEARCH
-        ? [
+      instructions:
+        "Você é a analista principal de um sistema pessoal de apostas esportivas focado em futebol. O motor estatístico funciona como scout e estruturador de dados: ele coleta odds, contexto competitivo, forma 5/10, xG/proxies, produção ofensiva/defensiva, elenco, calendário, disciplina, arbitragem, venue, clima, movimento de linha e jogadores-chave. A decisão final é sua. Sua função é revisar a shortlist, validar se a leitura estatística faz sentido, reordenar a carteira com critério profissional, cortar entradas fracas mesmo que o score esteja bom e destacar risco escondido ou contexto recente decisivo. Trate o universo completo de mercados como cobertura válida do radar: resultado, dupla chance, DNB, HT/FT, classificação, campeão, over/under, BTTS, faixas e total exato de gols, placar exato, marcadores, scorecasts, mercados por equipe, handicaps, escanteios, cartões, pênaltis, faltas, laterais, tiros de meta, impedimentos, passes, desarmes, interceptações, defesas, chutes e props individuais de jogador. Preserve a cobertura das seções que já vieram do sistema e complemente com contexto melhor, em vez de reduzir o dossiê. Se a busca web estiver habilitada, use-a ativamente para confirmar notícia recente, lesão, suspensão, rotação, escalação oficial, clima extremo ou contexto competitivo com fonte confiável, priorizando fonte oficial do clube, competição, liga ou veículo claramente confiável. Diferencie no texto o que veio do feed estatístico e o que foi confirmação web. Nunca invente estatísticas, nunca preencha métrica ausente com chute, nunca trate rumor como fato e não mantenha pick ruim só porque a odd parece atraente.",
+      input: [
+        {
+          role: "user",
+          content: [
             {
-              type: "web_search",
-              search_context_size: "medium",
-              user_location: {
-                type: "approximate",
-                city: "Sao Paulo",
-                country: "BR",
-                region: "Sao Paulo",
-                timezone: "America/Sao_Paulo",
-              },
+              type: "input_text",
+              text: JSON.stringify({
+                objective:
+                  "Revisar picks pontuadas pelo motor estatístico, fazer a leitura principal do jogo, ajustar a probabilidade com parcimônia e devolver resumo, razões, alertas e seções de análise organizadas.",
+                filters,
+                picks,
+              }),
             },
-          ]
-        : [],
-    include:
-      filters.useWebSearch && env.OPENAI_ENABLE_WEB_SEARCH
-        ? ["web_search_call.action.sources"]
-        : [],
-    text: {
-      verbosity: "low",
-      format: {
-        type: "json_schema",
-        name: "football_review",
-        strict: true,
-        schema: reviewSchema,
+          ],
+        },
+      ],
+      tools:
+        filters.useWebSearch && env.OPENAI_ENABLE_WEB_SEARCH
+          ? [
+              {
+                type: "web_search",
+                search_context_size: "medium",
+                user_location: {
+                  type: "approximate",
+                  city: "Sao Paulo",
+                  country: "BR",
+                  region: "Sao Paulo",
+                  timezone: "America/Sao_Paulo",
+                },
+              },
+            ]
+          : [],
+      include:
+        filters.useWebSearch && env.OPENAI_ENABLE_WEB_SEARCH
+          ? ["web_search_call.action.sources"]
+          : [],
+      text: {
+        verbosity: "low",
+        format: {
+          type: "json_schema",
+          name: "football_review",
+          strict: true,
+          schema: reviewSchema,
+        },
       },
     },
-  });
+    { timeout: 5 * 60 * 1000 },
+  );
 
   const parsed = JSON.parse(response.output_text) as OpenAIReview;
   const itemsById = new Map(parsed.picks.map((pick) => [pick.candidate_id, pick]));
