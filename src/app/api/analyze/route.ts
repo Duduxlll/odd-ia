@@ -12,6 +12,7 @@ import type { MarketCategoryId } from "@/lib/types";
 import {
   clearAnalysisHistory,
   createAnalysisJob,
+  failAnalysisJob,
   getDashboardState,
   getLatestAnalysisRun,
   getRunningAnalysisJob,
@@ -146,18 +147,26 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
     const session = await requireAuthenticatedSession();
+    const force = new URL(request.url).searchParams.has("force");
     const dashboardState = await getDashboardState(session.username);
 
     if (
       dashboardState.activeJob?.status === "running" ||
       dashboardState.activeJob?.status === "queued"
     ) {
-      return NextResponse.json(
-        { error: "Existe uma análise em andamento. Aguarde a conclusão antes de limpar." },
-        { status: 409 },
+      if (!force) {
+        return NextResponse.json(
+          { error: "Existe uma análise em andamento. Aguarde a conclusão antes de limpar." },
+          { status: 409 },
+        );
+      }
+      await failAnalysisJob(
+        session.username,
+        dashboardState.activeJob.id,
+        "Análise cancelada pelo usuário para reiniciar o scan.",
       );
     }
 

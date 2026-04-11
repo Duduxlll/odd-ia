@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Radar,
   RefreshCw,
+  RotateCcw,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
@@ -115,6 +116,7 @@ export function ControlPanel({
   isPending,
   isClearing,
   onRun,
+  onRestart,
   onClear,
   onChange,
   onToggleLeague,
@@ -129,6 +131,7 @@ export function ControlPanel({
   isPending: boolean;
   isClearing: boolean;
   onRun: () => void;
+  onRestart: () => void;
   onClear: () => void;
   onChange: (value: AnalysisFilters) => void;
   onToggleLeague: (id: number) => void;
@@ -706,45 +709,63 @@ export function ControlPanel({
       </AnimatePresence>
 
       {/* Buttons */}
-      <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={isPending || isClearing}
-          className="inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-2xl text-sm font-bold tracking-[-0.01em] transition-all disabled:cursor-not-allowed disabled:opacity-50"
-          style={{
-            background: "linear-gradient(135deg, #22D3EE 0%, #0EA5E9 100%)",
-            color: "#060A14",
-            boxShadow: isPending
-              ? "none"
-              : "0 0 28px rgba(34,211,238,0.35), 0 4px 16px rgba(0,0,0,0.3)",
-          }}
-        >
-          {isPending ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
-          ) : (
-            <Radar className="h-4 w-4" />
-          )}
-          {isPending ? "Escaneando..." : "Rodar análise"}
-          {!isPending && <ArrowRight className="h-4 w-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={onClear}
-          disabled={isPending || isClearing}
-          className="inline-flex h-[52px] items-center justify-center gap-2.5 rounded-2xl px-5 text-sm font-medium text-slate-400 transition-all hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
-          style={{
-            backgroundColor: "#111a2c",
-            border: "1px solid #1e2d42",
-          }}
-        >
-          {isClearing ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
-          ) : (
-            <Trash2 className="h-4 w-4" />
-          )}
-          {isClearing ? "Limpando..." : "Limpar"}
-        </button>
+      <div className="mt-5 flex flex-col gap-2">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={isPending || isClearing}
+            className="inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-2xl text-sm font-bold tracking-[-0.01em] transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              background: "linear-gradient(135deg, #22D3EE 0%, #0EA5E9 100%)",
+              color: "#060A14",
+              boxShadow: isPending
+                ? "none"
+                : "0 0 28px rgba(34,211,238,0.35), 0 4px 16px rgba(0,0,0,0.3)",
+            }}
+          >
+            {isPending ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Radar className="h-4 w-4" />
+            )}
+            {isPending ? "Escaneando..." : "Rodar análise"}
+            {!isPending && <ArrowRight className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={onClear}
+            disabled={isPending || isClearing}
+            className="inline-flex h-[52px] items-center justify-center gap-2.5 rounded-2xl px-5 text-sm font-medium text-slate-400 transition-all hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              backgroundColor: "#111a2c",
+              border: "1px solid #1e2d42",
+            }}
+          >
+            {isClearing ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            {isClearing ? "Limpando..." : "Limpar"}
+          </button>
+        </div>
+
+        {isPending && (
+          <button
+            type="button"
+            onClick={onRestart}
+            className="inline-flex h-[44px] w-full items-center justify-center gap-2.5 rounded-2xl text-sm font-semibold transition-all"
+            style={{
+              backgroundColor: "rgba(251,191,36,0.10)",
+              border: "1px solid rgba(251,191,36,0.25)",
+              color: "#FCD34D",
+            }}
+          >
+            <RotateCcw className="h-4 w-4" />
+            Cancelar e reiniciar scan
+          </button>
+        )}
       </div>
     </motion.aside>
   );

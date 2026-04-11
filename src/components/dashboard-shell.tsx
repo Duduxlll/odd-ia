@@ -226,6 +226,34 @@ export function DashboardShell({
     }
   }
 
+  async function handleForceRestart() {
+    setError(null);
+    setCopyFeedback(null);
+    setIsSubmittingAnalysis(true);
+    try {
+      await fetch("/api/analyze?force=true", { method: "DELETE" });
+      setRun(null);
+      setActiveJob(null);
+      setSystemNote(null);
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(filters),
+      });
+      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+      if (!response.ok || !payload.job) {
+        throw new Error(payload.error || "Falha ao reiniciar a análise.");
+      }
+      setActiveJob(payload.job);
+      setSystemNote("Scan reiniciado. O radar vai processar do zero.");
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : "Falha ao reiniciar a análise.",
+      );
+      setIsSubmittingAnalysis(false);
+    }
+  }
+
   async function handleClear() {
     setError(null);
     setCopyFeedback(null);
@@ -361,6 +389,7 @@ export function DashboardShell({
             isPending={isAnalyzing}
             isClearing={isClearing}
             onRun={handleAnalyze}
+            onRestart={handleForceRestart}
             onClear={handleClear}
             onChange={setFilters}
             onToggleLeague={toggleLeague}
