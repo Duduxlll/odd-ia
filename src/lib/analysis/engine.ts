@@ -2878,8 +2878,8 @@ function createFixtureContextLoader(filters: AnalysisFilters) {
 
       const [seasonStats, players, recentFixtures, nextFixtures] = await Promise.all([
         fetchTeamStatistics(leagueId, season, teamId, scanDate).catch(() => null),
-        fetchTeamPlayers(teamId, season, leagueId, 3).catch(() => []),
-        fetchRecentFixtures(teamId, 10).catch(() => []),
+        fetchTeamPlayers(teamId, season, leagueId, 1).catch(() => []),
+        fetchRecentFixtures(teamId, 6).catch(() => []),
         fetchNextFixtures(teamId, 3).catch(() => []),
       ]);
 
@@ -2909,7 +2909,7 @@ function createFixtureContextLoader(filters: AnalysisFilters) {
     }
 
     const request = (async () => {
-      const recentLeagueFixtures = await fetchLeagueRecentFixtures(leagueId, season, 24, "FT").catch(() => []);
+      const recentLeagueFixtures = await fetchLeagueRecentFixtures(leagueId, season, 10, "FT").catch(() => []);
       if (!recentLeagueFixtures.length) {
         return [] as ApiFootballFixture[];
       }
