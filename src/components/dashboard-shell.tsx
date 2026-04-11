@@ -142,6 +142,11 @@ export function DashboardShell({
         const response = await fetch("/api/analyze", {
           cache: "no-store",
         });
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          // Server temporarily unavailable (deploy in progress), skip this poll silently
+          return;
+        }
         const payload = (await response.json()) as {
           activeJob?: AnalysisJob | null;
           draftFilters?: AnalysisFilters;
@@ -240,6 +245,10 @@ export function DashboardShell({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(filters),
       });
+      const contentType = response.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Servidor reiniciando. Aguarde 1-2 minutos e tente novamente.");
+      }
       const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
       if (!response.ok || !payload.job) {
         throw new Error(payload.error || "Falha ao reiniciar a análise.");
