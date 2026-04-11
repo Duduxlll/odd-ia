@@ -44,6 +44,7 @@ const filtersSchema = z.object({
   ),
   useWebSearch: z.boolean(),
   includeSameGame: z.boolean(),
+  reasoningEffort: z.enum(["high", "medium", "low"]).default("medium"),
 });
 
 async function requireAuthenticatedSession() {

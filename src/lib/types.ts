@@ -22,6 +22,7 @@ export interface AnalysisFilters {
   marketCategories: MarketCategoryId[];
   useWebSearch: boolean;
   includeSameGame: boolean;
+  reasoningEffort: "high" | "medium" | "low";
 }
 
 export interface AnalysisSection {

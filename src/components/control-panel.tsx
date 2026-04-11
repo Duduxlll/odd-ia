@@ -676,6 +676,44 @@ export function ControlPanel({
                 )}
               </div>
 
+              <div>
+                <p className="mb-2 text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                  Velocidade da IA
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { value: "low", label: "Rápido", sub: "2-4 min" },
+                      { value: "medium", label: "Balanceado", sub: "5-8 min" },
+                      { value: "high", label: "Profundo", sub: "15-25 min" },
+                    ] as const
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => onChange({ ...filters, reasoningEffort: option.value })}
+                      className="rounded-xl px-2 py-2.5 text-center transition-all"
+                      style={
+                        filters.reasoningEffort === option.value
+                          ? {
+                              backgroundColor: "rgba(34,211,238,0.14)",
+                              border: "1px solid rgba(34,211,238,0.32)",
+                              color: "#22D3EE",
+                            }
+                          : {
+                              backgroundColor: "#0a1020",
+                              border: "1px solid #1e2d42",
+                              color: "#94A3B8",
+                            }
+                      }
+                    >
+                      <span className="block text-xs font-semibold">{option.label}</span>
+                      <span className="mt-0.5 block text-[10px] opacity-70">{option.sub}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <label className="flex cursor-pointer items-start gap-3 text-sm">
                 <input
                   type="checkbox"

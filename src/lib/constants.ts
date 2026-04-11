@@ -246,6 +246,7 @@ export const DEFAULT_FILTERS: AnalysisFilters = {
   marketCategories: MARKET_RULES.map((rule) => rule.id),
   useWebSearch: true,
   includeSameGame: false,
+  reasoningEffort: "medium" as const,
 };
 
 export function normalizeAnalysisFilters(
@@ -271,6 +272,12 @@ export function normalizeAnalysisFilters(
       typeof filters?.includeSameGame === "boolean"
         ? filters.includeSameGame
         : DEFAULT_FILTERS.includeSameGame,
+    reasoningEffort:
+      filters?.reasoningEffort === "high" ||
+      filters?.reasoningEffort === "medium" ||
+      filters?.reasoningEffort === "low"
+        ? filters.reasoningEffort
+        : DEFAULT_FILTERS.reasoningEffort,
   };
 }
 
