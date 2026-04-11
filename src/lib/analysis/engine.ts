@@ -3608,7 +3608,7 @@ export async function runFootballAnalysis(
     ? balanceItemsByCategory(
         scoredPicks,
         filters.marketCategories,
-        Math.min(Math.max(filters.pickCount * 5, 28), 60),
+        Math.min(Math.max(filters.pickCount * 4, 20), 35),
         (pick) => pick.candidateId,
       )
     : balanceItemsByCategory(

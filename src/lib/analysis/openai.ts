@@ -172,6 +172,32 @@ function mergeAnalysisSections(base: AnalysisSection[], review: AnalysisSection[
   return Array.from(merged.values());
 }
 
+function trimPickForReview(pick: AnalysisPick) {
+  return {
+    candidateId: pick.candidateId,
+    fixtureLabel: pick.fixtureLabel,
+    fixtureDate: pick.fixtureDate,
+    leagueName: pick.leagueName,
+    homeTeam: pick.homeTeam,
+    awayTeam: pick.awayTeam,
+    marketName: pick.marketName,
+    marketCategory: pick.marketCategory,
+    selection: pick.selection,
+    bestOdd: pick.bestOdd,
+    fairOdd: pick.fairOdd,
+    edge: pick.edge,
+    expectedValue: pick.expectedValue,
+    confidence: pick.confidence,
+    modelProbability: pick.modelProbability,
+    impliedProbability: pick.impliedProbability,
+    lineupStatus: pick.lineupStatus,
+    summary: pick.summary,
+    reasons: pick.reasons,
+    cautions: pick.cautions,
+    analysisSections: pick.analysisSections,
+  };
+}
+
 export async function reviewPicksWithOpenAI(
   picks: AnalysisPick[],
   filters: AnalysisFilters,
@@ -180,6 +206,8 @@ export async function reviewPicksWithOpenAI(
   if (!client || !picks.length) {
     return null;
   }
+
+  const trimmedPicks = picks.map(trimPickForReview);
 
   const response = await client.responses.create(
     {
@@ -199,7 +227,7 @@ export async function reviewPicksWithOpenAI(
                 objective:
                   "Revisar picks pontuadas pelo motor estatístico, fazer a leitura principal do jogo, ajustar a probabilidade com parcimônia e devolver resumo, razões, alertas e seções de análise organizadas.",
                 filters,
-                picks,
+                picks: trimmedPicks,
               }),
             },
           ],
@@ -235,6 +263,7 @@ export async function reviewPicksWithOpenAI(
         },
       },
     },
+    { timeout: 12 * 60 * 1000 },
   );
 
   const parsed = JSON.parse(response.output_text) as OpenAIReview;
