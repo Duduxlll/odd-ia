@@ -6,33 +6,7 @@ import {
   startAnalysisJob,
   touchAnalysisJob,
 } from "@/lib/db";
-import { getInternalBearerSecret } from "@/lib/internal-auth";
 import { runFootballAnalysis } from "@/lib/analysis/engine";
-
-export async function dispatchWorker(origin: string, jobId?: string) {
-  const secret = getInternalBearerSecret();
-  if (!secret) {
-    return false;
-  }
-
-  const url = new URL("/api/internal/worker", origin);
-  if (jobId) {
-    url.searchParams.set("jobId", jobId);
-  }
-
-  try {
-    await fetch(url, {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${secret}`,
-      },
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export async function processAnalysisQueue(jobId?: string) {
   const queuedJob = jobId

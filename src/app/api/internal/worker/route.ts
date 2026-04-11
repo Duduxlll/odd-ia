@@ -1,4 +1,3 @@
-import { after } from "next/server";
 import { NextResponse } from "next/server";
 
 import { assertInternalRequest } from "@/lib/internal-auth";
@@ -13,11 +12,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const jobId = url.searchParams.get("jobId") ?? undefined;
 
-    after(async () => {
-      await processAnalysisQueue(jobId);
-    });
-
-    return NextResponse.json({ ok: true, message: "Worker iniciado." });
+    const result = await processAnalysisQueue(jobId);
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unauthorized";
     return NextResponse.json({ error: message }, { status: 401 });

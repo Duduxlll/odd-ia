@@ -18,7 +18,7 @@ import {
   getRunningAnalysisJob,
   saveDraftFilters,
 } from "@/lib/db";
-import { dispatchWorker } from "@/lib/worker";
+import { processAnalysisQueue } from "@/lib/worker";
 
 export const runtime = "nodejs";
 export const maxDuration = 800;
@@ -118,8 +118,6 @@ export async function POST(request: Request) {
     const session = await requireAuthenticatedSession();
     const body = await request.json();
     const filters = normalizeAnalysisFilters(filtersSchema.parse(body));
-    const origin = new URL(request.url).origin;
-
     await saveDraftFilters(session.username, filters);
 
     const currentJob = await getRunningAnalysisJob(session.username);
@@ -130,7 +128,7 @@ export async function POST(request: Request) {
     const job = await createAnalysisJob(session.username, filters);
 
     after(async () => {
-      await dispatchWorker(origin, job.id);
+      await processAnalysisQueue(job.id);
     });
 
     return NextResponse.json({ job }, { status: 202 });
