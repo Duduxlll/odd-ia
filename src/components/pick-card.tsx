@@ -22,8 +22,11 @@ function categoryLabel(category: AnalysisPick["marketCategory"]) {
   if (category === "result") return "Resultado da partida";
   if (category === "corners") return "Escanteios no jogo";
   if (category === "cards") return "Cartões no jogo";
+  if (category === "shots") return "Chutes no jogo";
   if (category === "stats") return "Estatísticas do jogo";
   if (category === "halves") return "Por tempo";
+  if (category === "team_totals") return "Total por equipe";
+  if (category === "handicaps") return "Handicap";
   if (category === "players") return "Props de jogador";
   return "Mercado especial";
 }
@@ -33,7 +36,10 @@ function categoryAccent(category: AnalysisPick["marketCategory"]) {
   if (category === "result") return { color: "#A78BFA", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.25)" };
   if (category === "corners") return { color: "#FBBF24", bg: "rgba(251,191,36,0.12)", border: "rgba(251,191,36,0.25)" };
   if (category === "cards") return { color: "#FB7185", bg: "rgba(251,113,133,0.12)", border: "rgba(251,113,133,0.25)" };
+  if (category === "shots") return { color: "#34D399", bg: "rgba(52,211,153,0.12)", border: "rgba(52,211,153,0.25)" };
   if (category === "stats") return { color: "#818CF8", bg: "rgba(129,140,248,0.12)", border: "rgba(129,140,248,0.25)" };
+  if (category === "team_totals") return { color: "#38BDF8", bg: "rgba(56,189,248,0.12)", border: "rgba(56,189,248,0.25)" };
+  if (category === "handicaps") return { color: "#F472B6", bg: "rgba(244,114,182,0.12)", border: "rgba(244,114,182,0.25)" };
   return { color: "#60A5FA", bg: "rgba(96,165,250,0.12)", border: "rgba(96,165,250,0.25)" };
 }
 
