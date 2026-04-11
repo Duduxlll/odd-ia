@@ -408,86 +408,27 @@ export function DashboardShell({
           />
         </section>
 
-        {/* Executive summary + Accumulator */}
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <PanelCard
-            title="Resumo executivo"
-            subtitle={
-              isActiveJobPending
-                ? `Scan iniciado em ${formatDateTimeInSaoPaulo(activeJob.createdAt)}`
-                : run
-                ? `Última execução em ${formatDateTimeInSaoPaulo(run.createdAt)}`
-                : "Pronto para a primeira rodada"
-            }
-            icon={Gauge}
-          >
+        {/* Status compacto + Accumulator */}
+        {(isActiveJobPending || error || copyFeedback || (currentDiagnostics.selectedRemainingInWindow === 0)) ? (
+          <div className="space-y-2">
             {isActiveJobPending ? (
-              <div className="space-y-4">
-                <p className="max-w-3xl text-sm leading-7 text-slate-300">
-                  {activeJob?.status === "queued"
-                    ? "O job já foi salvo na fila com os filtros atuais. Assim que o worker assumir, o scan continua sozinho até gravar a rodada completa."
-                    : "O scan está em andamento com os filtros atuais. Você pode atualizar a página, e o radar continua processando até gravar a rodada completa."}
-                </p>
-                <AlertBlock tone="amber" message={activeJob.message} />
-                {currentDiagnostics.selectedRemainingInWindow === 0 ? (
-                  <AlertBlock
-                    tone="amber"
-                    title="Sem fixtures no escopo"
-                    message={noFixtureMessage}
-                  />
-                ) : null}
-                {error ? <AlertBlock tone="rose" message={error} /> : null}
-              </div>
-            ) : run ? (
-              <div className="space-y-4">
-                <p className="max-w-3xl text-sm leading-7 text-slate-300">
-                  {run.executiveSummary}
-                </p>
-                {resultDiagnosis ? (
-                  <AlertBlock
-                    tone={resultDiagnosis.tone}
-                    title={resultDiagnosis.title}
-                    message={resultDiagnosis.message}
-                  />
-                ) : null}
-                {systemNote ? (
-                  <AlertBlock tone="amber" message={systemNote} />
-                ) : null}
-                {error ? (
-                  <AlertBlock
-                    tone="rose"
-                    title={timeoutByVolume ? "Timeout por volume" : undefined}
-                    message={error}
-                  />
-                ) : null}
-                {copyFeedback ? (
-                  <AlertBlock tone="emerald" message={copyFeedback} />
-                ) : null}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {currentDiagnostics.selectedRemainingInWindow === 0 ? (
-                  <AlertBlock
-                    tone="amber"
-                    title="Sem fixtures no escopo"
-                    message={noFixtureMessage}
-                  />
-                ) : null}
-                {error ? (
-                  <AlertBlock
-                    tone="rose"
-                    title={timeoutByVolume ? "Timeout por volume" : undefined}
-                    message={error}
-                  />
-                ) : null}
-                <EmptyRunState
-                  title="Sem ruído visual até você pedir análise"
-                  description="Quando você rodar a primeira rodada, este bloco vira um resumo objetivo com valor encontrado, risco dominante e leitura final da IA."
-                />
-              </div>
-            )}
-          </PanelCard>
+              <AlertBlock tone="amber" message={activeJob.message} />
+            ) : null}
+            {currentDiagnostics.selectedRemainingInWindow === 0 && !isActiveJobPending ? (
+              <AlertBlock tone="amber" title="Sem fixtures no escopo" message={noFixtureMessage} />
+            ) : null}
+            {error ? (
+              <AlertBlock
+                tone="rose"
+                title={timeoutByVolume ? "Timeout por volume" : undefined}
+                message={error}
+              />
+            ) : null}
+            {copyFeedback ? <AlertBlock tone="emerald" message={copyFeedback} /> : null}
+          </div>
+        ) : null}
 
+        <section>
           <PanelCard
             title="Múltipla sugerida"
             subtitle={
@@ -589,141 +530,6 @@ export function DashboardShell({
             )}
           </PanelCard>
         </section>
-
-        {/* Pipeline */}
-        <PanelCard title="Como o sistema decide" subtitle="Pipeline em 5 estágios" icon={ShieldAlert}>
-          <div className="grid gap-3 lg:grid-cols-5">
-            <PipelineStep
-              step="01"
-              title="Mercado"
-              description="Odds, books, janela do scan, ligas, famílias e movimento de linha."
-            />
-            <PipelineStep
-              step="02"
-              title="Dossiê do jogo"
-              description="Tabela, contexto da competição, lineups, injuries, H2H e calendário."
-            />
-            <PipelineStep
-              step="03"
-              title="Perfil técnico"
-              description="Forma 5/10, xG, produção ofensiva/defensiva, jogadores, estilo e proxies avançadas."
-            />
-            <PipelineStep
-              step="04"
-              title="Score"
-              description="Probabilidade implícita, odd justa, edge, EV, risco, árbitro e qualidade do feed."
-            />
-            <PipelineStep
-              step="05"
-              title="IA final"
-              description="A IA revisa o dossiê, checa notícia quando preciso e preserva o tracking do modelo."
-            />
-          </div>
-        </PanelCard>
-
-        <PanelCard
-          title="Validação do modelo"
-          subtitle="Tracking histórico, CLV e leitura de longo prazo"
-          icon={BadgePercent}
-        >
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <ValidationMetric
-                label="Picks rastreadas"
-                value={String(initialSnapshot.performance.totalTracked)}
-                detail="base salva no Turso/local"
-              />
-              <ValidationMetric
-                label="Hit rate"
-                value={
-                  initialSnapshot.performance.hitRate !== null
-                    ? formatPercent(initialSnapshot.performance.hitRate)
-                    : "—"
-                }
-                detail="somente picks liquidadas"
-              />
-              <ValidationMetric
-                label="ROI"
-                value={
-                  initialSnapshot.performance.roiPct !== null
-                    ? formatPercent(initialSnapshot.performance.roiPct)
-                    : "—"
-                }
-                detail={`${initialSnapshot.performance.roiUnits.toFixed(2)}u acumuladas`}
-              />
-              <ValidationMetric
-                label="CLV positivo"
-                value={
-                  initialSnapshot.performance.positiveClvRate !== null
-                    ? formatPercent(initialSnapshot.performance.positiveClvRate)
-                    : "—"
-                }
-                detail={
-                  initialSnapshot.performance.averageClv !== null
-                    ? `CLV médio ${formatSigned(initialSnapshot.performance.averageClv)}`
-                    : "fechamento ainda em construção"
-                }
-              />
-            </div>
-
-            <div className="space-y-3">
-              <ValidationList
-                title="Mercados"
-                rows={initialSnapshot.performance.byMarket.slice(0, 3).map((bucket) => ({
-                  label: bucket.label,
-                  meta: `${bucket.settled} liquidadas`,
-                  value:
-                    bucket.hitRate !== null ? formatPercent(bucket.hitRate) : "—",
-                }))}
-              />
-              <ValidationList
-                title="Confiança"
-                rows={initialSnapshot.performance.byConfidence.slice(0, 3).map((bucket) => ({
-                  label: bucket.label,
-                  meta: `${bucket.settled} liquidadas`,
-                  value:
-                    bucket.roiUnits !== 0 ? `${bucket.roiUnits.toFixed(2)}u` : "0.00u",
-                }))}
-              />
-            </div>
-          </div>
-        </PanelCard>
-
-        <PanelCard
-          title="Infra premium"
-          subtitle="Worker, pré-coleta e calibração que sustentam a qualidade"
-          icon={ShieldAlert}
-        >
-          <div className="grid gap-4 xl:grid-cols-3">
-            <ValidationMetric
-              label="Worker"
-              value={`${initialSnapshot.operations.worker.queuedJobs} fila / ${initialSnapshot.operations.worker.runningJobs} rodando`}
-              detail={
-                initialSnapshot.operations.worker.lastCompletedAt
-                  ? `última conclusão ${formatDateTimeInSaoPaulo(initialSnapshot.operations.worker.lastCompletedAt)}`
-                  : "sem conclusão recente ainda"
-              }
-            />
-            <ValidationMetric
-              label="Pré-coleta"
-              value={`${initialSnapshot.operations.prefetch.fixtureEntries} fixtures / ${initialSnapshot.operations.prefetch.oddsEntries} odds`}
-              detail={
-                initialSnapshot.operations.prefetch.lastOddsAt
-                  ? `odds aquecidas em ${formatDateTimeInSaoPaulo(initialSnapshot.operations.prefetch.lastOddsAt)}`
-                  : "cache ainda aquecendo"
-              }
-            />
-            <ValidationMetric
-              label="Calibração"
-              value={`${initialSnapshot.operations.calibration.sampleSize} amostras`}
-              detail={
-                initialSnapshot.operations.calibration.updatedAt
-                  ? `perfil atualizado em ${formatDateTimeInSaoPaulo(initialSnapshot.operations.calibration.updatedAt)}`
-                  : "modelo ainda sem base suficiente"
-              }
-            />
-          </div>
-        </PanelCard>
 
         {/* Picks radar */}
         <PanelCard

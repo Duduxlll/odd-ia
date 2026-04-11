@@ -10,12 +10,23 @@ import {
   ExternalLink,
   FileText,
   ShieldCheck,
-  Sparkles,
+  ShieldAlert,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { AnalysisPick } from "@/lib/types";
 import { cn, formatDateTimeInSaoPaulo, formatOdd, formatPercent } from "@/lib/utils";
+
+function categoryLabel(category: AnalysisPick["marketCategory"]) {
+  if (category === "goals") return "Gols no jogo";
+  if (category === "result") return "Resultado da partida";
+  if (category === "corners") return "Escanteios no jogo";
+  if (category === "cards") return "Cartões no jogo";
+  if (category === "stats") return "Estatísticas do jogo";
+  if (category === "halves") return "Por tempo";
+  if (category === "players") return "Props de jogador";
+  return "Mercado especial";
+}
 
 function categoryAccent(category: AnalysisPick["marketCategory"]) {
   if (category === "goals") return { color: "#22D3EE", bg: "rgba(34,211,238,0.12)", border: "rgba(34,211,238,0.25)" };
@@ -261,11 +272,14 @@ export function PickCard({
             <h3 className="text-lg font-bold tracking-[-0.03em] text-white sm:text-xl">
               {pick.selection}
             </h3>
+            <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+              {categoryLabel(pick.marketCategory)} · {pick.marketName}
+            </p>
             <p className="mt-1 text-xs text-slate-500">
               {pick.fixtureLabel} · {formatDateTimeInSaoPaulo(pick.fixtureDate)}
             </p>
-            <p className="mt-1 text-[11px] leading-5 text-slate-600">
-              Feed: {pick.rawMarketName} · {pick.rawSelectionValue}
+            <p className="mt-0.5 text-[10px] leading-5 text-slate-600">
+              Nome técnico: {pick.rawMarketName} · {pick.rawSelectionValue}
               {pick.rawHandicap ? ` · linha ${pick.rawHandicap}` : ""}
             </p>
             <p className="mt-3 max-w-lg text-sm leading-6 text-slate-300">{pick.summary}</p>
@@ -350,7 +364,7 @@ export function PickCard({
             onClick={() => setShowReasons((c) => !c)}
           />
           <ToggleButton
-            label="Atenção"
+            label="Tomar Cuidado"
             count={pick.cautions.length + (pick.newsNote ? 1 : 0)}
             icon={AlertTriangle}
             active={showCautions}
@@ -418,14 +432,32 @@ export function PickCard({
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-emerald-400" />
                   <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">
-                    A favor
+                    Por que deve bater
                   </p>
                 </div>
                 <div className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
                   {pick.reasons.map((reason) => (
-                    <p key={reason}>· {reason}</p>
+                    <p key={reason}>✓ {reason}</p>
                   ))}
                 </div>
+                {pick.analysisSections.filter((s) => s.tone === "support").length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {pick.analysisSections
+                      .filter((s) => s.tone === "support")
+                      .map((section) => (
+                        <div key={`favor:${section.id}`}>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-600">
+                            {section.label}
+                          </p>
+                          <div className="mt-1 space-y-1 text-sm leading-6 text-slate-400">
+                            {section.bullets.map((bullet) => (
+                              <p key={bullet}>· {bullet}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : null}
               </div>
             </motion.div>
           ) : null}
@@ -444,22 +476,45 @@ export function PickCard({
               <div
                 className="mt-4 rounded-2xl p-4"
                 style={{
-                  backgroundColor: "rgba(251,191,36,0.06)",
-                  border: "1px solid rgba(251,191,36,0.18)",
+                  backgroundColor: "rgba(251,113,133,0.07)",
+                  border: "1px solid rgba(251,113,133,0.28)",
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-amber-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-400">
-                    Atenção
+                  <ShieldAlert className="h-4 w-4 text-rose-400" />
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-400">
+                    ⚠ Tomar Cuidado
                   </p>
                 </div>
+                <p className="mt-1 text-[11px] text-rose-600">
+                  Esses fatores podem impedir a aposta de bater — leia antes de apostar.
+                </p>
                 <div className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
                   {pick.cautions.map((caution) => (
-                    <p key={caution}>· {caution}</p>
+                    <p key={caution}>⚡ {caution}</p>
                   ))}
-                  {pick.newsNote ? <p>· {pick.newsNote}</p> : null}
+                  {pick.newsNote ? (
+                    <p className="text-amber-300">📰 {pick.newsNote}</p>
+                  ) : null}
                 </div>
+                {pick.analysisSections.filter((s) => s.tone === "caution").length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    {pick.analysisSections
+                      .filter((s) => s.tone === "caution")
+                      .map((section) => (
+                        <div key={`caution:${section.id}`}>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-600">
+                            {section.label}
+                          </p>
+                          <div className="mt-1 space-y-1 text-sm leading-6 text-slate-400">
+                            {section.bullets.map((bullet) => (
+                              <p key={bullet}>· {bullet}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ) : null}
               </div>
             </motion.div>
           ) : null}
