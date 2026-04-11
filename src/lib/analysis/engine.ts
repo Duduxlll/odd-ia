@@ -3549,8 +3549,8 @@ export async function runFootballAnalysis(
   const baseSeedVolume = env.API_FOOTBALL_FREE_PLAN_MODE
     ? Math.min(Math.max(filters.pickCount * 2, 12), 28)
     : Math.min(
-        filters.pickCount * 4,
-        Math.max(32, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
+        Math.max(filters.pickCount * 5, 40),
+        Math.max(40, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
       );
   const seedVolume = baseSeedVolume;
   const seededSingles = balanceItemsByCategory(
@@ -3560,8 +3560,8 @@ export async function runFootballAnalysis(
     (candidate) => candidate.candidateId,
   );
   const accumulatorSeedVolume = Math.min(
-    Math.max(filters.pickCount * 3, accumulatorMaxLegs * 2),
-    Math.max(24, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
+    Math.max(filters.pickCount * 4, 24),
+    Math.max(48, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
   );
   const seededAccumulator = balanceItemsByCategory(
     accumulatorOnlyCandidates,
@@ -3608,13 +3608,13 @@ export async function runFootballAnalysis(
     ? balanceItemsByCategory(
         scoredPicks,
         filters.marketCategories,
-        Math.min(Math.max(filters.pickCount * 4, 16), 28),
+        Math.min(Math.max(filters.pickCount * 5, 28), 60),
         (pick) => pick.candidateId,
       )
     : balanceItemsByCategory(
         scoredPicks,
         filters.marketCategories,
-        Math.min(Math.max(filters.pickCount * 2, filters.pickCount), 20),
+        Math.min(Math.max(filters.pickCount * 3, filters.pickCount), 30),
         (pick) => pick.candidateId,
       );
   const aiReview = await reviewPicksWithOpenAI(aiReviewSeed, filters).catch(() => null);
