@@ -57,6 +57,7 @@ export function DashboardShell({
     initialSnapshot.latestRun?.systemNote ?? null,
   );
   const [isSubmittingAnalysis, setIsSubmittingAnalysis] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
@@ -234,12 +235,9 @@ export function DashboardShell({
   async function handleForceRestart() {
     setError(null);
     setCopyFeedback(null);
-    setIsSubmittingAnalysis(true);
+    setIsRestarting(true);
     try {
       await fetch("/api/analyze?force=true", { method: "DELETE" });
-      setRun(null);
-      setActiveJob(null);
-      setSystemNote(null);
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,13 +251,15 @@ export function DashboardShell({
       if (!response.ok || !payload.job) {
         throw new Error(payload.error || "Falha ao reiniciar a análise.");
       }
+      setRun(null);
       setActiveJob(payload.job);
       setSystemNote("Scan reiniciado. O radar vai processar do zero.");
     } catch (caughtError) {
       setError(
         caughtError instanceof Error ? caughtError.message : "Falha ao reiniciar a análise.",
       );
-      setIsSubmittingAnalysis(false);
+    } finally {
+      setIsRestarting(false);
     }
   }
 
@@ -396,6 +396,7 @@ export function DashboardShell({
             regulatedBookmakerCount={initialSnapshot.supportedBookmakers.length}
             markets={initialSnapshot.supportedMarkets}
             isPending={isAnalyzing}
+            isRestarting={isRestarting}
             isClearing={isClearing}
             onRun={handleAnalyze}
             onRestart={handleForceRestart}

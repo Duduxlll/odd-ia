@@ -117,6 +117,7 @@ export function ControlPanel({
   isClearing,
   onRun,
   onRestart,
+  isRestarting,
   onClear,
   onChange,
   onToggleLeague,
@@ -129,6 +130,7 @@ export function ControlPanel({
   regulatedBookmakerCount: number;
   markets: SupportedMarketCategory[];
   isPending: boolean;
+  isRestarting: boolean;
   isClearing: boolean;
   onRun: () => void;
   onRestart: () => void;
@@ -755,15 +757,21 @@ export function ControlPanel({
           <button
             type="button"
             onClick={onRestart}
-            className="inline-flex h-[44px] w-full items-center justify-center gap-2.5 rounded-2xl text-sm font-semibold transition-all"
+            disabled={isRestarting}
+            className="inline-flex h-[44px] w-full items-center justify-center gap-2.5 rounded-2xl text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-70"
             style={{
-              backgroundColor: "rgba(251,191,36,0.10)",
-              border: "1px solid rgba(251,191,36,0.25)",
+              backgroundColor: isRestarting
+                ? "rgba(251,191,36,0.18)"
+                : "rgba(251,191,36,0.10)",
+              border: "1px solid rgba(251,191,36,0.35)",
               color: "#FCD34D",
+              boxShadow: isRestarting
+                ? "0 0 18px rgba(251,191,36,0.20)"
+                : "none",
             }}
           >
-            <RotateCcw className="h-4 w-4" />
-            Cancelar e reiniciar scan
+            <RotateCcw className={`h-4 w-4 ${isRestarting ? "animate-spin" : ""}`} />
+            {isRestarting ? "Reiniciando..." : "Cancelar e reiniciar scan"}
           </button>
         )}
       </div>
