@@ -1,5 +1,9 @@
 import { env } from "@/lib/env";
 import { getRegulatedBookmaker } from "@/lib/constants";
+import {
+  normalizeCountryDisplayName,
+  normalizeLeagueDisplayName,
+} from "@/lib/utils";
 const API_FOOTBALL_REQUEST_TIMEOUT_MS = 15000;
 const DIRECTORY_CACHE_TTL_MS = 1000 * 60 * 30;
 
@@ -415,8 +419,8 @@ export async function fetchAvailableLeagues() {
       const type = entry.league?.type?.toLowerCase() ?? "";
       return {
         id,
-        name,
-        country: entry.country?.name ?? "Internacional",
+        name: normalizeLeagueDisplayName(id, name, entry.country?.name),
+        country: normalizeCountryDisplayName(entry.country?.name),
         emphasis: type === "cup" ? "copa ativa" : "liga ativa",
       } satisfies SupportedLeague;
     })

@@ -31,7 +31,13 @@ type ControlPanelDiagnostics = {
   totalRemainingInWindow: number;
   selectedRemainingInWindow: number;
   missingSelectedLeagues: SupportedLeague[];
+  leagueCounts: Record<number, number>;
 };
+
+function formatLeagueCountLabel(count: number, scanDate: string) {
+  const period = getScanDateLabelLower(scanDate);
+  return `${count} jogo${count === 1 ? "" : "s"} ${period}`;
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -139,11 +145,33 @@ export function ControlPanel({
   const scanDateLabelLower = getScanDateLabelLower(diagnostics.scanDate);
   const topLeagueIds = leagues.slice(0, 8).map((league) => league.id);
   const normalizedLeagueQuery = leagueQuery.trim().toLowerCase();
-  const visibleLeagues = normalizedLeagueQuery
+  const filteredLeagues = normalizedLeagueQuery
     ? leagues.filter((league) =>
         `${league.name} ${league.country}`.toLowerCase().includes(normalizedLeagueQuery),
       )
     : leagues;
+  const visibleLeagues = [...filteredLeagues].sort((left, right) => {
+    const leftCount = diagnostics.leagueCounts[left.id] ?? 0;
+    const rightCount = diagnostics.leagueCounts[right.id] ?? 0;
+    const leftSelected = filters.leagueIds.includes(left.id) ? 1 : 0;
+    const rightSelected = filters.leagueIds.includes(right.id) ? 1 : 0;
+    const leftPriority = topLeagueIds.includes(left.id) ? 1 : 0;
+    const rightPriority = topLeagueIds.includes(right.id) ? 1 : 0;
+
+    return (
+      rightCount - leftCount ||
+      rightSelected - leftSelected ||
+      rightPriority - leftPriority ||
+      left.country.localeCompare(right.country, "pt-BR") ||
+      left.name.localeCompare(right.name, "pt-BR")
+    );
+  });
+  const leaguesWithMatches = visibleLeagues.filter(
+    (league) => (diagnostics.leagueCounts[league.id] ?? 0) > 0,
+  );
+  const leaguesWithoutMatches = visibleLeagues.filter(
+    (league) => (diagnostics.leagueCounts[league.id] ?? 0) === 0,
+  );
 
   return (
     <motion.aside
@@ -408,49 +436,126 @@ export function ControlPanel({
               </div>
               <p className="mt-3 text-xs leading-5 text-slate-500">
                 {filters.leagueIds.length === 0
-                  ? `Modo aberto: o scan pode puxar qualquer uma das ${leagues.length} ligas disponíveis.`
-                  : "As ligas marcadas entram com prioridade no radar. Se você limpar tudo, o sistema abre o mapa completo."}
+                  ? `Modo aberto: o scan destaca primeiro as ligas com jogos em ${scanDateLabelLower} e pode puxar qualquer uma das ${leagues.length} ligas disponíveis.`
+                  : `As ligas marcadas entram com prioridade no radar. Neste recorte, ${diagnostics.selectedRemainingInWindow} jogo${
+                      diagnostics.selectedRemainingInWindow === 1 ? "" : "s"
+                    } seguem elegíveis no seu escopo.`}
               </p>
               <div className="mt-3 max-h-[22rem] overflow-y-auto pr-1">
-                <div className="flex flex-wrap gap-2">
-                  {visibleLeagues.map((league) => {
-                    const selected =
-                      filters.leagueIds.length === 0 || filters.leagueIds.includes(league.id);
-                    const emphasized = topLeagueIds.includes(league.id);
-                    return (
-                      <button
-                        key={league.id}
-                        type="button"
-                        onClick={() => onToggleLeague(league.id)}
-                        className="rounded-2xl px-3 py-2 text-left text-sm font-medium transition-all"
-                        style={
-                          selected
-                            ? {
-                                backgroundColor: "rgba(34,211,238,0.16)",
-                                border: "1px solid rgba(34,211,238,0.32)",
-                              color: "#22D3EE",
-                            }
-                          : {
-                              backgroundColor: "#0a1020",
-                              border: "1px solid #1e2d42",
-                              color: "#94A3B8",
-                            }
-                        }
-                      >
-                        <span className="block text-sm">{league.name}</span>
-                        <span className="mt-0.5 block text-[11px] uppercase tracking-[0.18em] text-slate-500">
-                          {league.country}
-                          {emphasized ? " • prioridade" : ""}
-                        </span>
-                      </button>
-                    );
-                  })}
-                  {!visibleLeagues.length ? (
-                    <div
-                      className="w-full rounded-2xl px-3 py-4 text-sm text-slate-500"
-                      style={{ backgroundColor: "#0a1020", border: "1px solid #1e2d42" }}
-                    >
-                      Nenhuma liga encontrada para essa busca.
+                <div className="space-y-4">
+                  <div>
+                    <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                      {leaguesWithMatches.length > 0
+                        ? `Com jogos em ${scanDateLabelLower}`
+                        : `Sem jogos em ${scanDateLabelLower}`}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(leaguesWithMatches.length > 0 ? leaguesWithMatches : visibleLeagues).map(
+                        (league) => {
+                          const selected =
+                            filters.leagueIds.length === 0 || filters.leagueIds.includes(league.id);
+                          const emphasized = topLeagueIds.includes(league.id);
+                          const matchCount = diagnostics.leagueCounts[league.id] ?? 0;
+
+                          return (
+                            <button
+                              key={league.id}
+                              type="button"
+                              onClick={() => onToggleLeague(league.id)}
+                              className="rounded-2xl px-3 py-2 text-left text-sm font-medium transition-all"
+                              style={
+                                selected
+                                  ? {
+                                      backgroundColor: "rgba(34,211,238,0.16)",
+                                      border: "1px solid rgba(34,211,238,0.32)",
+                                      color: "#22D3EE",
+                                    }
+                                  : {
+                                      backgroundColor: "#0a1020",
+                                      border: "1px solid #1e2d42",
+                                      color: "#94A3B8",
+                                    }
+                              }
+                            >
+                              <span className="block text-sm">{league.name}</span>
+                              <span className="mt-0.5 block text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                                {league.country}
+                                {emphasized ? " • prioridade" : ""}
+                              </span>
+                              <span
+                                className="mt-1.5 inline-flex rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.16em]"
+                                style={{
+                                  backgroundColor:
+                                    matchCount > 0 ? "rgba(34,211,238,0.10)" : "rgba(148,163,184,0.08)",
+                                  border:
+                                    matchCount > 0
+                                      ? "1px solid rgba(34,211,238,0.18)"
+                                      : "1px solid rgba(148,163,184,0.12)",
+                                  color: matchCount > 0 ? "#67E8F9" : "#64748B",
+                                }}
+                              >
+                                {matchCount > 0
+                                  ? formatLeagueCountLabel(matchCount, diagnostics.scanDate)
+                                  : `sem jogos ${scanDateLabelLower}`}
+                              </span>
+                            </button>
+                          );
+                        },
+                      )}
+                      {!visibleLeagues.length ? (
+                        <div
+                          className="w-full rounded-2xl px-3 py-4 text-sm text-slate-500"
+                          style={{ backgroundColor: "#0a1020", border: "1px solid #1e2d42" }}
+                        >
+                          Nenhuma liga encontrada para essa busca.
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {leaguesWithMatches.length > 0 && leaguesWithoutMatches.length > 0 ? (
+                    <div>
+                      <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                        Outras ligas sem partidas nesse recorte
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {leaguesWithoutMatches.map((league) => {
+                          const selected =
+                            filters.leagueIds.length === 0 || filters.leagueIds.includes(league.id);
+                          const emphasized = topLeagueIds.includes(league.id);
+
+                          return (
+                            <button
+                              key={league.id}
+                              type="button"
+                              onClick={() => onToggleLeague(league.id)}
+                              className="rounded-2xl px-3 py-2 text-left text-sm font-medium transition-all"
+                              style={
+                                selected
+                                  ? {
+                                      backgroundColor: "rgba(148,163,184,0.10)",
+                                      border: "1px solid rgba(148,163,184,0.16)",
+                                      color: "#CBD5E1",
+                                    }
+                                  : {
+                                      backgroundColor: "#0a1020",
+                                      border: "1px solid #1e2d42",
+                                      color: "#64748B",
+                                    }
+                              }
+                            >
+                              <span className="block text-sm">{league.name}</span>
+                              <span className="mt-0.5 block text-[11px] uppercase tracking-[0.18em] text-slate-600">
+                                {league.country}
+                                {emphasized ? " • prioridade" : ""}
+                              </span>
+                              <span className="mt-1.5 inline-flex rounded-full border border-slate-700/70 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                                sem jogos {scanDateLabelLower}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : null}
                 </div>

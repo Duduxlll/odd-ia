@@ -22,6 +22,8 @@ import {
   getDateKeyFromIsoInSaoPaulo,
   getTodayDateInSaoPaulo,
   getTomorrowDateInSaoPaulo,
+  normalizeCountryDisplayName,
+  normalizeLeagueDisplayName,
   withTimeoutFallback,
 } from "@/lib/utils";
 
@@ -103,12 +105,17 @@ export async function getDashboardSnapshot(username: string) {
     ]);
 
   const priorityOrder = new Map(TOP_FOOTBALL_LEAGUES.map((league, index) => [league.id, index]));
+  const normalizeLeague = (league: { id: number; name: string; country: string; emphasis: string }) => ({
+    ...league,
+    name: normalizeLeagueDisplayName(league.id, league.name, league.country),
+    country: normalizeCountryDisplayName(league.country),
+  });
   const mergedLeagues = [
     ...TOP_FOOTBALL_LEAGUES,
     ...allLeagues.filter((league) => !priorityOrder.has(league.id)),
   ].map((league) => {
     const priority = TOP_FOOTBALL_LEAGUES.find((item) => item.id === league.id);
-    return priority ?? league;
+    return normalizeLeague(priority ?? league);
   });
 
   return {
@@ -132,8 +139,12 @@ export async function getDashboardSnapshot(username: string) {
       .map((fixture) => ({
         fixtureId: fixture.fixture.id,
         leagueId: fixture.league.id,
-        leagueName: fixture.league.name,
-        leagueCountry: fixture.league.country,
+        leagueName: normalizeLeagueDisplayName(
+          fixture.league.id,
+          fixture.league.name,
+          fixture.league.country,
+        ),
+        leagueCountry: normalizeCountryDisplayName(fixture.league.country),
         kickoffAt: fixture.fixture.date,
         scanDate: getDateKeyFromIsoInSaoPaulo(fixture.fixture.date),
         statusShort: fixture.fixture.status?.short ?? null,

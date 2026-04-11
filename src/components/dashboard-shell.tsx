@@ -924,6 +924,7 @@ type ScanDiagnostics = {
   totalRemainingInWindow: number;
   selectedRemainingInWindow: number;
   missingSelectedLeagues: SupportedLeague[];
+  leagueCounts: Record<number, number>;
 };
 
 function buildScanDiagnostics(
@@ -942,6 +943,11 @@ function buildScanDiagnostics(
     return Number.isFinite(kickoffAt) && kickoffAt > nowMs;
   });
 
+  const leagueCounts = fixturesInWindow.reduce<Record<number, number>>((accumulator, fixture) => {
+    accumulator[fixture.leagueId] = (accumulator[fixture.leagueId] ?? 0) + 1;
+    return accumulator;
+  }, {});
+
   const selectedRemainingInWindow = selectedLeagueIds.length
     ? fixturesInWindow.filter((fixture) => selectedLeagueIds.includes(fixture.leagueId))
     : fixturesInWindow;
@@ -956,6 +962,7 @@ function buildScanDiagnostics(
     totalRemainingInWindow: fixturesInWindow.length,
     selectedRemainingInWindow: selectedRemainingInWindow.length,
     missingSelectedLeagues,
+    leagueCounts,
   };
 }
 
