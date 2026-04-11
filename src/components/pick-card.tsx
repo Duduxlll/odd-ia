@@ -9,8 +9,10 @@ import {
   Copy,
   ExternalLink,
   FileText,
+  RefreshCw,
   ShieldCheck,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -157,6 +159,10 @@ export function PickCard({
   const [copied, setCopied] = useState(false);
   const [showReasons, setShowReasons] = useState(false);
   const [showCautions, setShowCautions] = useState(false);
+  const [favorInsight, setFavorInsight] = useState<string | null>(null);
+  const [cautionInsight, setCautionInsight] = useState<string | null>(null);
+  const [isLoadingFavor, setIsLoadingFavor] = useState(false);
+  const [isLoadingCaution, setIsLoadingCaution] = useState(false);
   const [showDossier, setShowDossier] = useState(false);
 
   const accent = categoryAccent(pick.marketCategory);
@@ -223,6 +229,48 @@ export function PickCard({
     await navigator.clipboard.writeText(content);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  async function handleInsight(direction: "favor" | "caution") {
+    const setLoading = direction === "favor" ? setIsLoadingFavor : setIsLoadingCaution;
+    const setInsight = direction === "favor" ? setFavorInsight : setCautionInsight;
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/analyze/pick-insight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          direction,
+          pick: {
+            candidateId: pick.candidateId,
+            fixtureLabel: pick.fixtureLabel,
+            homeTeam: pick.homeTeam,
+            awayTeam: pick.awayTeam,
+            leagueName: pick.leagueName,
+            marketName: pick.marketName,
+            marketCategory: pick.marketCategory,
+            selection: pick.selection,
+            bestOdd: pick.bestOdd,
+            modelProbability: pick.modelProbability,
+            confidence: pick.confidence,
+            reasons: pick.reasons,
+            cautions: pick.cautions,
+            analysisSections: pick.analysisSections,
+            summary: pick.summary,
+          },
+        }),
+      });
+      const data = (await response.json()) as { analysis?: string; error?: string };
+      if (!response.ok || !data.analysis) {
+        throw new Error(data.error ?? "Não foi possível gerar análise agora.");
+      }
+      setInsight(data.analysis);
+    } catch (err) {
+      setInsight(err instanceof Error ? `Erro: ${err.message}` : "Erro ao gerar análise.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -464,6 +512,46 @@ export function PickCard({
                       ))}
                   </div>
                 ) : null}
+
+                {/* Botão de análise profunda — A favor */}
+                <div className="mt-4 border-t pt-4" style={{ borderColor: "rgba(52,211,153,0.15)" }}>
+                  {favorInsight ? (
+                    <div>
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-500">
+                        Análise profunda — por que vai bater
+                      </p>
+                      <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
+                        {favorInsight}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setFavorInsight(null)}
+                        className="mt-3 text-[11px] text-slate-600 underline hover:text-slate-400"
+                      >
+                        Limpar análise
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleInsight("favor")}
+                      disabled={isLoadingFavor}
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all disabled:cursor-wait disabled:opacity-60"
+                      style={{
+                        backgroundColor: "rgba(52,211,153,0.10)",
+                        border: "1px solid rgba(52,211,153,0.25)",
+                        color: "#34D399",
+                      }}
+                    >
+                      {isLoadingFavor ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {isLoadingFavor ? "Analisando..." : "Analisar por que vai bater"}
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           ) : null}
@@ -521,6 +609,46 @@ export function PickCard({
                       ))}
                   </div>
                 ) : null}
+
+                {/* Botão de análise profunda — Tomar Cuidado */}
+                <div className="mt-4 border-t pt-4" style={{ borderColor: "rgba(251,113,133,0.15)" }}>
+                  {cautionInsight ? (
+                    <div>
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-500">
+                        Análise profunda — por que pode falhar
+                      </p>
+                      <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
+                        {cautionInsight}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setCautionInsight(null)}
+                        className="mt-3 text-[11px] text-slate-600 underline hover:text-slate-400"
+                      >
+                        Limpar análise
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleInsight("caution")}
+                      disabled={isLoadingCaution}
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all disabled:cursor-wait disabled:opacity-60"
+                      style={{
+                        backgroundColor: "rgba(251,113,133,0.10)",
+                        border: "1px solid rgba(251,113,133,0.25)",
+                        color: "#FB7185",
+                      }}
+                    >
+                      {isLoadingCaution ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ShieldAlert className="h-3.5 w-3.5" />
+                      )}
+                      {isLoadingCaution ? "Analisando..." : "Analisar por que pode falhar"}
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           ) : null}
