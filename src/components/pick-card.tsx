@@ -198,6 +198,7 @@ export function PickCard({
     const content = [
       `${pick.fixtureLabel}`,
       `${pick.marketName} | ${pick.selection}`,
+      `Feed: ${pick.rawMarketName} | ${pick.rawSelectionValue}${pick.rawHandicap ? ` | linha ${pick.rawHandicap}` : ""}`,
       `Odd ${formatOdd(pick.bestOdd)} | Casa ${pick.bookmaker}`,
       `Resumo: ${pick.summary}`,
     ].join("\n");
@@ -262,6 +263,10 @@ export function PickCard({
             </h3>
             <p className="mt-1 text-xs text-slate-500">
               {pick.fixtureLabel} · {formatDateTimeInSaoPaulo(pick.fixtureDate)}
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-600">
+              Feed: {pick.rawMarketName} · {pick.rawSelectionValue}
+              {pick.rawHandicap ? ` · linha ${pick.rawHandicap}` : ""}
             </p>
             <p className="mt-3 max-w-lg text-sm leading-6 text-slate-300">{pick.summary}</p>
           </div>

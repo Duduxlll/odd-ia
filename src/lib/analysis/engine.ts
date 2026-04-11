@@ -1,6 +1,11 @@
 import { eachDayOfInterval, format } from "date-fns";
 
-import { DEFAULT_FILTERS, getMarketStabilityBias, resolveMarketCategory } from "@/lib/constants";
+import {
+  DEFAULT_FILTERS,
+  getMarketStabilityBias,
+  isRegulatedBookmakerName,
+  resolveMarketCategory,
+} from "@/lib/constants";
 import { reviewPicksWithOpenAI } from "@/lib/analysis/openai";
 import {
   getLatestClosingOdd,
@@ -84,6 +89,9 @@ type RawCandidate = {
   marketCategory: MarketCategoryId;
   selection: string;
   selectionKey: string;
+  rawMarketName: string;
+  rawSelectionValue: string;
+  rawHandicap: string | null;
   bestOdd: number;
   consensusOdd: number;
   bookmaker: string;
@@ -258,9 +266,7 @@ function normalizeFilters(filters: Partial<AnalysisFilters> | undefined): Analys
     scanDate: resolveAllowedScanDate(filters?.scanDate),
     horizonHours: 24,
     leagueIds: Array.isArray(filters?.leagueIds) ? filters.leagueIds : DEFAULT_FILTERS.leagueIds,
-    bookmakerIds: Array.isArray(filters?.bookmakerIds)
-      ? filters.bookmakerIds
-      : DEFAULT_FILTERS.bookmakerIds,
+    bookmakerIds: [],
     marketCategories: filters?.marketCategories?.length
       ? filters.marketCategories
       : DEFAULT_FILTERS.marketCategories,
@@ -448,15 +454,22 @@ function isFixtureInsideWindow(
 }
 
 function displaySelection(rawSelection: unknown, homeTeam: string, awayTeam: string) {
-  const normalizedSelection = String(rawSelection);
+  const normalizedSelection = String(rawSelection).trim();
   const lower = normalizedSelection.toLowerCase();
 
   if (lower === "home") return homeTeam;
   if (lower === "away") return awayTeam;
+  if (lower === "1") return homeTeam;
+  if (lower === "2") return awayTeam;
+  if (lower === "x" || lower === "draw") return "Empate";
   if (lower === "home/draw" || lower === "1x") return `${homeTeam} ou empate`;
   if (lower === "away/draw" || lower === "x2") return `${awayTeam} ou empate`;
   if (lower === "home/away" || lower === "12") return `${homeTeam} ou ${awayTeam}`;
-  return normalizedSelection;
+
+  return normalizedSelection
+    .replace(/^home\b/i, homeTeam)
+    .replace(/^away\b/i, awayTeam)
+    .replace(/^draw\b/i, "Empate");
 }
 
 function formatLineValue(line: number | null) {
@@ -497,10 +510,80 @@ function buildThresholdLabel(
   lineText: string | null,
   scope: string,
   unit: string,
+  lineValue: number | null = null,
 ) {
   const prefix = direction === "over" ? "mais de" : "menos de";
-  const label = `${prefix} ${lineText ?? ""} ${unit} ${scope}`.replace(/\s+/g, " ").trim();
+  const pluralUnit = resolveBetUnitLabel(unit, lineValue);
+  const label = `${prefix} ${lineText ?? ""} ${pluralUnit} ${scope}`.replace(/\s+/g, " ").trim();
   return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function resolveBetUnitLabel(unit: string, lineValue: number | null) {
+  const normalized = unit.toLowerCase();
+  const singular =
+    lineValue === null ||
+    Math.abs(lineValue) <= 1;
+
+  if (normalized === "gol") return singular ? "gol" : "gols";
+  if (normalized === "escanteio") return singular ? "escanteio" : "escanteios";
+  if (normalized === "cartao") return singular ? "cartão" : "cartões";
+  if (normalized === "chute") return singular ? "chute" : "chutes";
+  if (normalized === "chute no alvo") return singular ? "chute no alvo" : "chutes no alvo";
+  if (normalized === "impedimento") return singular ? "impedimento" : "impedimentos";
+  if (normalized === "passe") return singular ? "passe" : "passes";
+  if (normalized === "desarme") return singular ? "desarme" : "desarmes";
+  if (normalized === "interceptação") return singular ? "interceptação" : "interceptações";
+  if (normalized === "falta") return singular ? "falta" : "faltas";
+  if (normalized === "lateral") return singular ? "lateral" : "laterais";
+  if (normalized === "tiro de meta") return singular ? "tiro de meta" : "tiros de meta";
+  if (normalized === "defesa") return singular ? "defesa" : "defesas";
+  if (normalized === "assistência") return singular ? "assistência" : "assistências";
+  if (normalized === "corte") return singular ? "corte" : "cortes";
+  if (normalized === "bloqueio") return singular ? "bloqueio" : "bloqueios";
+  return unit;
+}
+
+function resolvePeriodSuffix(marketName: string) {
+  if (marketName.includes("second half") || marketName.includes("2nd half")) {
+    return "no 2º tempo";
+  }
+
+  if (marketName.includes("first half") || marketName.includes("1st half")) {
+    return "no 1º tempo";
+  }
+
+  return null;
+}
+
+function resolveTeamSuffix(marketName: string, candidate: RawCandidate) {
+  if (/\bhome\b|mandante/.test(marketName)) {
+    return `do ${candidate.homeTeam}`;
+  }
+
+  if (/\baway\b|visitante/.test(marketName)) {
+    return `do ${candidate.awayTeam}`;
+  }
+
+  return null;
+}
+
+function resolveScopeLabel(
+  marketName: string,
+  candidate: RawCandidate,
+  fallback: string,
+) {
+  const teamSuffix = resolveTeamSuffix(marketName, candidate);
+  const periodSuffix = resolvePeriodSuffix(marketName);
+
+  if (teamSuffix && periodSuffix) {
+    return `${teamSuffix} ${periodSuffix}`;
+  }
+
+  return teamSuffix ?? periodSuffix ?? fallback;
+}
+
+function resolveRawSelectionLabel(candidate: RawCandidate) {
+  return displaySelection(candidate.rawSelectionValue, candidate.homeTeam, candidate.awayTeam);
 }
 
 function inferStatsLabel(marketName: string) {
@@ -518,7 +601,7 @@ function inferStatsLabel(marketName: string) {
 }
 
 function buildMarketPresentation(candidate: RawCandidate) {
-  const marketName = candidate.marketName.toLowerCase();
+  const marketName = candidate.rawMarketName.toLowerCase();
   const direction = selectionDirection(candidate.selection);
   const lineText = formatLineValue(candidate.lineValue);
   const signedLineText = formatSignedLineValue(candidate.lineValue);
@@ -527,6 +610,7 @@ function buildMarketPresentation(candidate: RawCandidate) {
     : "1º tempo";
   const shotUnit = marketName.includes("target") ? "chute no alvo" : "chute";
   const selectionLower = candidate.selection.toLowerCase();
+  const rawSelectionLabel = resolveRawSelectionLabel(candidate);
 
   if (marketName.includes("correct score")) {
     return {
@@ -821,140 +905,156 @@ function buildMarketPresentation(candidate: RawCandidate) {
           : marketName.includes("shot")
             ? shotUnit
           : "gol";
+    const scope = resolveScopeLabel(marketName, candidate, `no ${halfLabel}`);
 
     return {
       marketName: halfLabel,
-      selection: buildThresholdLabel(direction, lineText, `no ${halfLabel}`, unit),
+      selection: buildThresholdLabel(direction, lineText, scope, unit, candidate.lineValue),
     };
   }
 
   if (candidate.marketCategory === "shots" && isOverUnderDirection(direction) && lineText) {
+    const scope = resolveScopeLabel(marketName, candidate, "no jogo");
     return {
-      marketName: marketName.includes("target") ? "Chutes no alvo" : "Total de chutes",
-      selection: buildThresholdLabel(direction, lineText, "na linha monitorada", shotUnit),
+      marketName: marketName.includes("target")
+        ? resolveTeamSuffix(marketName, candidate)
+          ? "Total de chutes no alvo por equipe"
+          : "Total de chutes no alvo"
+        : resolveTeamSuffix(marketName, candidate)
+          ? "Total de chutes por equipe"
+          : "Total de chutes",
+      selection: buildThresholdLabel(direction, lineText, scope, shotUnit, candidate.lineValue),
     };
   }
 
   if (candidate.marketCategory === "stats" && isOverUnderDirection(direction) && lineText) {
     const statLabel = inferStatsLabel(marketName);
+    const scope = resolveScopeLabel(marketName, candidate, "no jogo");
     return {
       marketName: statLabel.marketName,
-      selection: buildThresholdLabel(direction, lineText, "na linha monitorada", statLabel.unit),
+      selection: buildThresholdLabel(direction, lineText, scope, statLabel.unit, candidate.lineValue),
     };
   }
 
   if (candidate.marketCategory === "players" && isOverUnderDirection(direction) && lineText) {
+    const playerScope =
+      rawSelectionLabel !== candidate.selection ? `de ${rawSelectionLabel}` : "do jogador";
     if (marketName.includes("shot") && marketName.includes("target")) {
       return {
         marketName: "Jogador com chutes no alvo",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "chute no alvo"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "chute no alvo", candidate.lineValue),
       };
     }
     if (marketName.includes("shot")) {
       return {
         marketName: "Jogador com chutes",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "chute"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "chute", candidate.lineValue),
       };
     }
     if (marketName.includes("assist")) {
       return {
         marketName: "Jogador com assistência",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "assistência"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "assistência", candidate.lineValue),
       };
     }
     if (marketName.includes("pass")) {
       return {
         marketName: "Jogador com passes",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "passe"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "passe", candidate.lineValue),
       };
     }
     if (marketName.includes("foul")) {
       return {
         marketName: "Jogador com faltas cometidas",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "falta"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "falta", candidate.lineValue),
       };
     }
     if (marketName.includes("tackle")) {
       return {
         marketName: "Jogador com desarmes",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "desarme"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "desarme", candidate.lineValue),
       };
     }
     if (marketName.includes("interception")) {
       return {
         marketName: "Jogador com interceptações",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "interceptação"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "interceptação", candidate.lineValue),
       };
     }
     if (marketName.includes("save")) {
       return {
         marketName: "Goleiro com defesas",
-        selection: buildThresholdLabel(direction, lineText, "do atleta monitorado", "defesa"),
+        selection: buildThresholdLabel(direction, lineText, playerScope, "defesa", candidate.lineValue),
       };
     }
   }
 
   if (candidate.marketCategory === "goals" && isOverUnderDirection(direction) && lineText) {
+    const scope = resolveScopeLabel(marketName, candidate, "no jogo");
     return {
       marketName: "Total de gols",
-      selection: buildThresholdLabel(direction, lineText, "no jogo", "gol"),
+      selection: buildThresholdLabel(direction, lineText, scope, "gol", candidate.lineValue),
     };
   }
 
   if (candidate.marketCategory === "corners" && isOverUnderDirection(direction) && lineText) {
+    const scope = resolveScopeLabel(marketName, candidate, "no jogo");
     return {
       marketName: "Total de escanteios",
-      selection: buildThresholdLabel(direction, lineText, "no jogo", "escanteio"),
+      selection: buildThresholdLabel(direction, lineText, scope, "escanteio", candidate.lineValue),
     };
   }
 
   if (candidate.marketCategory === "cards" && isOverUnderDirection(direction) && lineText) {
+    const scope = resolveScopeLabel(marketName, candidate, "no jogo");
     return {
-      marketName: "Total de cartoes",
-      selection: buildThresholdLabel(direction, lineText, "no jogo", "cartao"),
+      marketName: "Total de cartões",
+      selection: buildThresholdLabel(direction, lineText, scope, "cartao", candidate.lineValue),
     };
   }
 
   if (candidate.marketCategory === "corners") {
     return {
       marketName: "Mercado de escanteios",
-      selection: candidate.selection,
+      selection: rawSelectionLabel,
     };
   }
 
   if (candidate.marketCategory === "cards") {
     return {
-      marketName: "Mercado de cartoes",
-      selection: candidate.selection,
+      marketName: "Mercado de cartões",
+      selection: rawSelectionLabel,
     };
   }
 
   if (candidate.marketCategory === "shots") {
     return {
       marketName: "Mercado de chutes",
-      selection: candidate.selection,
+      selection: rawSelectionLabel,
     };
   }
 
   if (candidate.marketCategory === "stats") {
     return {
       marketName: inferStatsLabel(marketName).marketName,
-      selection: candidate.selection,
+      selection: rawSelectionLabel,
     };
   }
 
   if (candidate.marketCategory === "players") {
     return {
       marketName: "Mercado de jogador",
-      selection: candidate.selection,
+      selection: rawSelectionLabel,
     };
   }
 
   if (marketName.includes("handicap")) {
-    const handicapLabel = signedLineText ? `${candidate.selection} ${signedLineText}` : candidate.selection;
+    const hasEmbeddedLine = /(-?\d+(?:[.,]\d+)?)/.test(rawSelectionLabel);
+    const handicapLabel =
+      signedLineText && !hasEmbeddedLine ? `${rawSelectionLabel} ${signedLineText}` : rawSelectionLabel;
 
     return {
-      marketName: marketName.includes("asian") ? "Asian handicap" : "Handicap",
+      marketName: marketName.includes("asian") ? "Handicap asiático" : "Handicap",
       selection: handicapLabel,
     };
   }
@@ -981,8 +1081,8 @@ function buildMarketPresentation(candidate: RawCandidate) {
   }
 
   return {
-    marketName: candidate.marketName,
-    selection: candidate.selection,
+    marketName: candidate.rawMarketName,
+    selection: rawSelectionLabel,
   };
 }
 
@@ -1004,9 +1104,17 @@ function buildCandidates(
   fixtures: ApiFootballFixture[],
   oddsEntries: ApiFootballOddsEntry[],
   filters: AnalysisFilters,
+  options?: {
+    minOdd?: number;
+    maxOdd?: number;
+    seedTargetOdd?: number;
+  },
 ) {
   const fixturesById = new Map(fixtures.map((fixture) => [fixture.fixture.id, fixture]));
   const aggregate = new Map<string, RawCandidate>();
+  const minOdd = options?.minOdd ?? filters.minOdd;
+  const maxOdd = options?.maxOdd ?? filters.maxOdd;
+  const seedTarget = options?.seedTargetOdd ?? (minOdd + maxOdd) / 2;
 
   for (const entry of oddsEntries) {
     const fixture = fixturesById.get(entry.fixture.id);
@@ -1019,7 +1127,7 @@ function buildCandidates(
     }
 
     for (const bookmaker of entry.bookmakers ?? []) {
-      if (filters.bookmakerIds.length && !filters.bookmakerIds.includes(bookmaker.id)) {
+      if (!isRegulatedBookmakerName(bookmaker.name)) {
         continue;
       }
 
@@ -1031,7 +1139,7 @@ function buildCandidates(
 
         for (const value of bet.values ?? []) {
           const odd = parseDecimal(value.odd);
-          if (odd === null || odd < filters.minOdd || odd > filters.maxOdd) {
+          if (odd === null || odd < minOdd || odd > maxOdd) {
             continue;
           }
 
@@ -1042,7 +1150,6 @@ function buildCandidates(
           );
           const selectionKey = slugify(`${bet.id}-${value.value}-${value.handicap ?? ""}`);
           const aggregateKey = `${fixture.fixture.id}:${bet.id}:${selectionKey}`;
-          const seedTarget = (filters.minOdd + filters.maxOdd) / 2;
           const distanceFromTarget = Math.abs(odd - seedTarget);
           const seedScore =
             1.4 -
@@ -1070,6 +1177,9 @@ function buildCandidates(
               marketCategory: category,
               selection,
               selectionKey,
+              rawMarketName: bet.name,
+              rawSelectionValue: String(value.value),
+              rawHandicap: value.handicap ?? null,
               bestOdd: odd,
               consensusOdd: odd,
               bookmaker: bookmaker.name,
@@ -2670,6 +2780,9 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
     marketCategory: candidate.marketCategory,
     selection: presentation.selection,
     selectionKey: candidate.selectionKey,
+    rawMarketName: candidate.rawMarketName,
+    rawSelectionValue: candidate.rawSelectionValue,
+    rawHandicap: candidate.rawHandicap,
     bestOdd: candidate.bestOdd,
     consensusOdd: candidate.consensusOdd,
     sportsbookCount: candidate.sportsbookCount,
@@ -2956,6 +3069,16 @@ async function enrichCandidate(
   } satisfies EnrichedCandidate;
 }
 
+function getAccumulatorMaxLegs(targetAccumulatorOdd: number) {
+  return targetAccumulatorOdd >= 9
+    ? 5
+    : targetAccumulatorOdd >= 5
+      ? 4
+      : targetAccumulatorOdd >= 3
+        ? 3
+        : 2;
+}
+
 function buildAccumulator(picks: AnalysisPick[], targetAccumulatorOdd: number, includeSameGame: boolean) {
   type AccumulatorCandidate = {
     picks: AnalysisPick[];
@@ -2963,11 +3086,10 @@ function buildAccumulator(picks: AnalysisPick[], targetAccumulatorOdd: number, i
     score: number;
   };
 
-  const eligible = picks.filter((pick) => pick.aiVerdict !== "pass").slice(0, 14);
+  const eligible = picks.filter((pick) => pick.aiVerdict !== "pass").slice(0, 18);
   if (!eligible.length) return null;
 
-  const maxLegs =
-    targetAccumulatorOdd >= 9 ? 5 : targetAccumulatorOdd >= 5 ? 4 : targetAccumulatorOdd >= 3 ? 3 : 2;
+  const maxLegs = getAccumulatorMaxLegs(targetAccumulatorOdd);
 
   let best: AccumulatorCandidate | null = null;
 
@@ -3379,18 +3501,50 @@ export async function runFootballAnalysis(
     },
   );
   const oddsEntries = oddsByFixture.flat();
-  let rawCandidates = buildCandidates(eligibleFixtures, oddsEntries, filters);
+  let rawCandidates = buildCandidates(eligibleFixtures, oddsEntries, filters, {
+    minOdd: filters.minOdd,
+    maxOdd: filters.maxOdd,
+    seedTargetOdd: (filters.minOdd + filters.maxOdd) / 2,
+  });
+  const accumulatorMaxLegs = getAccumulatorMaxLegs(filters.targetAccumulatorOdd);
+  const accumulatorSeedTarget = clamp(
+    Math.pow(Math.max(filters.targetAccumulatorOdd, 1.1), 1 / accumulatorMaxLegs),
+    1.15,
+    5.5,
+  );
+  const accumulatorRawCandidates = buildCandidates(eligibleFixtures, oddsEntries, filters, {
+    minOdd: 1.05,
+    maxOdd: 20,
+    seedTargetOdd: accumulatorSeedTarget,
+  });
   const categoriesWithOdds = new Set(rawCandidates.map((candidate) => candidate.marketCategory));
+  const combinedCandidates = Array.from(
+    new Map(
+      [...rawCandidates, ...accumulatorRawCandidates].map((candidate) => [
+        candidate.candidateId,
+        candidate,
+      ]),
+    ).values(),
+  );
   const lineHistory = await getLineHistoryByCandidateIds(
-    rawCandidates.map((candidate) => candidate.candidateId),
+    combinedCandidates.map((candidate) => candidate.candidateId),
   );
   rawCandidates = rawCandidates.map((candidate) => ({
     ...candidate,
     lineHistory: lineHistory.get(candidate.candidateId) ?? null,
   }));
+  const accumulatorOnlyCandidates = accumulatorRawCandidates
+    .filter(
+      (candidate) =>
+        !rawCandidates.some((currentCandidate) => currentCandidate.candidateId === candidate.candidateId),
+    )
+    .map((candidate) => ({
+      ...candidate,
+      lineHistory: lineHistory.get(candidate.candidateId) ?? null,
+    }));
   const bookmakerScopeLabel = env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER
     ? env.API_FOOTBALL_PRIMARY_BOOKMAKER_NAME
-    : "mercado agregado";
+    : "casas reguladas";
   const scanDateLabel = getScanDateLabel(filters.scanDate);
   const baseSeedVolume = env.API_FOOTBALL_FREE_PLAN_MODE
     ? Math.min(Math.max(filters.pickCount * 2, 12), 28)
@@ -3399,11 +3553,26 @@ export async function runFootballAnalysis(
         Math.max(32, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
       );
   const seedVolume = baseSeedVolume;
-  const seeded = balanceItemsByCategory(
+  const seededSingles = balanceItemsByCategory(
     rawCandidates,
     filters.marketCategories,
     seedVolume,
     (candidate) => candidate.candidateId,
+  );
+  const accumulatorSeedVolume = Math.min(
+    Math.max(filters.pickCount * 3, 18),
+    Math.max(24, env.API_FOOTBALL_MAX_SEED_CANDIDATES),
+  );
+  const seededAccumulator = balanceItemsByCategory(
+    accumulatorOnlyCandidates,
+    filters.marketCategories,
+    accumulatorSeedVolume,
+    (candidate) => candidate.candidateId,
+  );
+  const seeded = Array.from(
+    new Map(
+      [...seededSingles, ...seededAccumulator].map((candidate) => [candidate.candidateId, candidate]),
+    ).values(),
   );
   const getFixtureContext = createFixtureContextLoader(filters);
   await reportProgress(`Aprofundando contexto em ${seeded.length} mercados candidatos.`);
@@ -3412,10 +3581,14 @@ export async function runFootballAnalysis(
     env.API_FOOTBALL_FREE_PLAN_MODE ? 1 : env.API_FOOTBALL_CONTEXT_CONCURRENCY,
     (candidate) => enrichCandidate(candidate, getFixtureContext),
   );
-  let picks = enriched
+  const scoredPicks = enriched
     .map((candidate) => scoreCandidate(candidate, calibration))
     .filter((pick) => pick.expectedValue > -0.03)
     .sort((left, right) => right.confidence - left.confidence || right.edge - left.edge);
+  let picks = scoredPicks.filter(
+    (pick) => pick.bestOdd >= filters.minOdd && pick.bestOdd <= filters.maxOdd,
+  );
+  let accumulatorSourcePicks = scoredPicks.filter((pick) => pick.bestOdd >= 1.05 && pick.bestOdd <= 20);
 
   let executiveSummary = picks.length
     ? `O motor encontrou ${picks.length} picks acima da linha mínima de valor dentro da faixa de odd ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
@@ -3433,15 +3606,15 @@ export async function runFootballAnalysis(
   await reportProgress("Pontuando valor, risco e shortlist final.");
   const aiReviewSeed = aiEnabled
     ? balanceItemsByCategory(
-        picks,
+        scoredPicks,
         filters.marketCategories,
-        Math.min(Math.max(filters.pickCount * 3, 12), 24),
+        Math.min(Math.max(filters.pickCount * 4, 16), 28),
         (pick) => pick.candidateId,
       )
     : balanceItemsByCategory(
-        picks,
+        scoredPicks,
         filters.marketCategories,
-        filters.pickCount,
+        Math.min(Math.max(filters.pickCount * 2, filters.pickCount), 20),
         (pick) => pick.candidateId,
       );
   const aiReview = await reviewPicksWithOpenAI(aiReviewSeed, filters).catch(() => null);
@@ -3474,13 +3647,19 @@ export async function runFootballAnalysis(
       ? reviewedPicks.filter((pick) => pick.aiVerdict !== "pass")
       : reviewedPicks;
 
+    accumulatorSourcePicks = viableReviewedPicks.filter(
+      (pick) => pick.bestOdd >= 1.05 && pick.bestOdd <= 20,
+    );
     picks = balanceItemsByCategory(
-      viableReviewedPicks,
+      viableReviewedPicks.filter(
+        (pick) => pick.bestOdd >= filters.minOdd && pick.bestOdd <= filters.maxOdd,
+      ),
       filters.marketCategories,
       filters.pickCount,
       (pick) => pick.candidateId,
     );
   } else {
+    accumulatorSourcePicks = scoredPicks.filter((pick) => pick.bestOdd >= 1.05 && pick.bestOdd <= 20);
     picks = balanceItemsByCategory(
       picks,
       filters.marketCategories,
@@ -3512,7 +3691,11 @@ export async function runFootballAnalysis(
     executiveSummary = `${executiveSummary} ${notes.join(" ")}`.trim();
   }
 
-  const accumulator = buildAccumulator(picks, filters.targetAccumulatorOdd, filters.includeSameGame);
+  const accumulator = buildAccumulator(
+    accumulatorSourcePicks,
+    filters.targetAccumulatorOdd,
+    filters.includeSameGame,
+  );
   const webEnabled = aiEnabled && filters.useWebSearch && env.OPENAI_ENABLE_WEB_SEARCH;
 
   const run: AnalysisRun = {
@@ -3539,6 +3722,8 @@ export async function runFootballAnalysis(
 
   if (env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER) {
     run.systemNote = `${run.systemNote} Odds focadas exclusivamente em ${env.API_FOOTBALL_PRIMARY_BOOKMAKER_NAME}.`;
+  } else {
+    run.systemNote = `${run.systemNote} Odds comparadas somente entre casas reguladas mapeadas no feed brasileiro.`;
   }
 
   run.systemNote = `${run.systemNote} Worker dedicado, pré-coleta contínua de fixtures/odds e calibração histórica do modelo estão ativos.`;

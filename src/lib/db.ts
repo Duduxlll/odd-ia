@@ -109,6 +109,11 @@ function mapPickRow(row: Record<string, unknown>): AnalysisPick {
     marketCategory: String(row.market_category) as AnalysisPick["marketCategory"],
     selection: String(row.selection),
     selectionKey: String(row.selection_key),
+    rawMarketName: row.raw_market_name ? String(row.raw_market_name) : String(row.market_name),
+    rawSelectionValue: row.raw_selection_value
+      ? String(row.raw_selection_value)
+      : String(row.selection),
+    rawHandicap: row.raw_handicap ? String(row.raw_handicap) : null,
     bestOdd: numberValue(row.best_odd),
     consensusOdd: numberValue(row.consensus_odd),
     sportsbookCount: numberValue(row.sportsbook_count),
@@ -299,6 +304,9 @@ export async function ensureSchema() {
           market_category TEXT NOT NULL,
           selection TEXT NOT NULL,
           selection_key TEXT NOT NULL,
+          raw_market_name TEXT NOT NULL DEFAULT '',
+          raw_selection_value TEXT NOT NULL DEFAULT '',
+          raw_handicap TEXT,
           best_odd REAL NOT NULL,
           consensus_odd REAL NOT NULL,
           sportsbook_count INTEGER NOT NULL,
@@ -403,6 +411,9 @@ export async function ensureSchema() {
       await ensureColumnExists(PICKS_TABLE, "analysis_sections_json", "TEXT", "[]");
       await ensureColumnExists(PICKS_TABLE, "xg_context_json", "TEXT", "null");
       await ensureColumnExists(PICKS_TABLE, "line_movement_json", "TEXT", "null");
+      await ensureColumnExists(PICKS_TABLE, "raw_market_name", "TEXT", "");
+      await ensureColumnExists(PICKS_TABLE, "raw_selection_value", "TEXT", "");
+      await ensureColumnExists(PICKS_TABLE, "raw_handicap", "TEXT", "");
       await ensureColumnExists(PICKS_TABLE, "clv_json", "TEXT", "null");
       await ensureColumnExists(
         PICKS_TABLE,
@@ -482,6 +493,9 @@ export async function saveAnalysisRun(
             market_category,
             selection,
             selection_key,
+            raw_market_name,
+            raw_selection_value,
+            raw_handicap,
             best_odd,
             consensus_odd,
             sportsbook_count,
@@ -510,7 +524,7 @@ export async function saveAnalysisRun(
             ai_verdict,
             ai_confidence_label,
             created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         args: [
           `${run.id}:${pick.candidateId}`,
@@ -530,6 +544,9 @@ export async function saveAnalysisRun(
           pick.marketCategory,
           pick.selection,
           pick.selectionKey,
+          pick.rawMarketName,
+          pick.rawSelectionValue,
+          pick.rawHandicap ?? "",
           pick.bestOdd,
           pick.consensusOdd,
           pick.sportsbookCount,

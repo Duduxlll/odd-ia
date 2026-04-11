@@ -22,6 +22,29 @@ export const TOP_FOOTBALL_LEAGUES: SupportedLeague[] = [
   { id: 13, name: "Libertadores", country: "América do Sul", emphasis: "contexto sul-americano" },
 ];
 
+export const REGULATED_BOOKMAKERS = [
+  { name: "1xBet", domain: "1xbet.bet.br" },
+  { name: "Bet365", domain: "bet365.bet.br" },
+  { name: "Betano", domain: "betano.bet.br" },
+  { name: "Betfair", domain: "betfair.bet.br" },
+  { name: "Betsson", domain: "betsson.bet.br" },
+  { name: "Pinnacle", domain: "pinnacle.bet.br" },
+  { name: "Sportingbet", domain: "sportingbet.bet.br" },
+  { name: "Superbet", domain: "superbet.bet.br" },
+] as const;
+
+const REGULATED_BOOKMAKER_MAP = new Map(
+  REGULATED_BOOKMAKERS.map((bookmaker) => [bookmaker.name.toLowerCase(), bookmaker]),
+);
+
+export function getRegulatedBookmaker(name: string) {
+  return REGULATED_BOOKMAKER_MAP.get(name.trim().toLowerCase()) ?? null;
+}
+
+export function isRegulatedBookmakerName(name: string) {
+  return Boolean(getRegulatedBookmaker(name));
+}
+
 export const MARKET_RULES: MarketRule[] = [
   {
     id: "handicaps",
@@ -236,9 +259,7 @@ export function normalizeAnalysisFilters(
     leagueIds: Array.isArray(filters?.leagueIds)
       ? filters.leagueIds
       : DEFAULT_FILTERS.leagueIds,
-    bookmakerIds: Array.isArray(filters?.bookmakerIds)
-      ? filters.bookmakerIds
-      : DEFAULT_FILTERS.bookmakerIds,
+    bookmakerIds: [],
     marketCategories: Array.isArray(filters?.marketCategories)
       ? filters.marketCategories
       : DEFAULT_FILTERS.marketCategories,

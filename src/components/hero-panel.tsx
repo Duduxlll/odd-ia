@@ -141,11 +141,7 @@ export function HeroPanel({
       ? `${filters.leagueIds.length} ligas ativas`
       : `todas as ${availableLeagueCount} ligas`
     : "—";
-  const bookmakersLabel = filters
-    ? filters.bookmakerIds.length
-      ? `${filters.bookmakerIds.length} casas ativas`
-      : `todas as ${availableBookmakerCount} casas`
-    : "—";
+  const bookmakersLabel = filters ? `${availableBookmakerCount} casas reguladas` : "—";
   const markets = filters?.marketCategories.length ?? 0;
   const band = filters ? `${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}` : "—";
 
@@ -190,7 +186,7 @@ export function HeroPanel({
           <ScopePill label="Radar pessoal" />
           <ScopePill label="Futebol + IA + Turso" />
           <ScopePill
-            label={config.singleBookmakerMode ? config.primaryBookmakerName : "Multi-casa"}
+            label={config.singleBookmakerMode ? config.primaryBookmakerName : "Casas reguladas"}
           />
           {filters ? (
             <ScopePill
@@ -340,7 +336,7 @@ export function HeroPanel({
                 label={
                   config.singleBookmakerMode
                     ? `Casa foco: ${config.primaryBookmakerName}`
-                    : "Melhor odd multi-casa"
+                    : "Comparador entre casas reguladas"
                 }
                 status={config.singleBookmakerMode ? "travada" : "aberta"}
                 active={!config.singleBookmakerMode}

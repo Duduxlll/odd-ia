@@ -22,7 +22,6 @@ import type {
   AnalysisFilters,
   ConfigStatus,
   MarketCategoryId,
-  SupportedBookmaker,
   SupportedLeague,
   SupportedMarketCategory,
 } from "@/lib/types";
@@ -105,7 +104,7 @@ export function ControlPanel({
   config,
   filters,
   leagues,
-  bookmakers,
+  regulatedBookmakerCount,
   markets,
   isPending,
   isClearing,
@@ -113,14 +112,13 @@ export function ControlPanel({
   onClear,
   onChange,
   onToggleLeague,
-  onToggleBookmaker,
   onToggleMarket,
   diagnostics,
 }: {
   config: ConfigStatus;
   filters: AnalysisFilters;
   leagues: SupportedLeague[];
-  bookmakers: SupportedBookmaker[];
+  regulatedBookmakerCount: number;
   markets: SupportedMarketCategory[];
   isPending: boolean;
   isClearing: boolean;
@@ -128,33 +126,24 @@ export function ControlPanel({
   onClear: () => void;
   onChange: (value: AnalysisFilters) => void;
   onToggleLeague: (id: number) => void;
-  onToggleBookmaker: (id: number) => void;
   onToggleMarket: (id: MarketCategoryId) => void;
   diagnostics: ControlPanelDiagnostics;
 }) {
   const [showLeagues, setShowLeagues] = useState(false);
-  const [showBookmakers, setShowBookmakers] = useState(false);
   const [showMarkets, setShowMarkets] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [leagueQuery, setLeagueQuery] = useState("");
-  const [bookmakerQuery, setBookmakerQuery] = useState("");
   const today = getTodayDateInSaoPaulo();
   const tomorrow = getTomorrowDateInSaoPaulo();
   const selectedWindow = filters.scanDate === tomorrow ? "tomorrow" : "today";
   const scanDateLabelLower = getScanDateLabelLower(diagnostics.scanDate);
   const topLeagueIds = leagues.slice(0, 8).map((league) => league.id);
   const normalizedLeagueQuery = leagueQuery.trim().toLowerCase();
-  const normalizedBookmakerQuery = bookmakerQuery.trim().toLowerCase();
   const visibleLeagues = normalizedLeagueQuery
     ? leagues.filter((league) =>
         `${league.name} ${league.country}`.toLowerCase().includes(normalizedLeagueQuery),
       )
     : leagues;
-  const visibleBookmakers = normalizedBookmakerQuery
-    ? bookmakers.filter((bookmaker) =>
-        bookmaker.name.toLowerCase().includes(normalizedBookmakerQuery),
-      )
-    : bookmakers;
 
   return (
     <motion.aside
@@ -193,9 +182,7 @@ export function ControlPanel({
           filters.leagueIds.length
             ? `${filters.leagueIds.length} ligas prioritárias`
             : "todas as ligas",
-          filters.bookmakerIds.length
-            ? `${filters.bookmakerIds.length} casas`
-            : "todas as casas",
+          `${regulatedBookmakerCount} casas reguladas`,
           `${filters.marketCategories.length} mercados`,
           `faixa ${filters.minOdd.toFixed(2)}-${filters.maxOdd.toFixed(2)}`,
         ].map((label) => (
@@ -336,12 +323,6 @@ export function ControlPanel({
           onClick={() => setShowLeagues((c) => !c)}
         />
         <SectionToggle
-          label="Casas"
-          value={filters.bookmakerIds.length ? String(filters.bookmakerIds.length) : "Todas"}
-          active={showBookmakers}
-          onClick={() => setShowBookmakers((c) => !c)}
-        />
-        <SectionToggle
           label="Mercados"
           value={String(filters.marketCategories.length)}
           active={showMarkets}
@@ -479,105 +460,6 @@ export function ControlPanel({
         ) : null}
       </AnimatePresence>
 
-      {/* Bookmakers */}
-      <AnimatePresence initial={false}>
-        {showBookmakers ? (
-          <motion.div
-            initial={{ opacity: 0, height: 0, y: -8 }}
-            animate={{ opacity: 1, height: "auto", y: 0 }}
-            exit={{ opacity: 0, height: 0, y: -8 }}
-            className="overflow-hidden"
-          >
-            <div
-              className="mt-4 rounded-2xl p-4"
-              style={{ backgroundColor: "#111a2c", border: "1px solid #1e2d42" }}
-            >
-              <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
-                Casas de aposta
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => onChange({ ...filters, bookmakerIds: [] })}
-                  className="rounded-full px-3 py-2 text-sm font-medium transition-all"
-                  style={
-                    filters.bookmakerIds.length === 0
-                      ? {
-                          backgroundColor: "rgba(34,211,238,0.16)",
-                          border: "1px solid rgba(34,211,238,0.32)",
-                          color: "#22D3EE",
-                        }
-                      : {
-                          backgroundColor: "#0a1020",
-                          border: "1px solid #1e2d42",
-                          color: "#94A3B8",
-                        }
-                  }
-                >
-                  Todas as casas
-                </button>
-              </div>
-              <div className="mt-3">
-                <input
-                  type="search"
-                  value={bookmakerQuery}
-                  onChange={(event) => setBookmakerQuery(event.target.value)}
-                  placeholder="Buscar casa de aposta"
-                  className={cn(inputClass, "h-11")}
-                  style={inputStyle}
-                />
-              </div>
-              <p className="mt-3 text-xs leading-5 text-slate-500">
-                {filters.bookmakerIds.length === 0
-                  ? `Modo aberto: o radar pode comparar odds entre todas as ${bookmakers.length} casas disponíveis.`
-                  : "Quando você marca casas específicas, o radar só considera odds vindas delas."}
-              </p>
-              <div className="mt-3 max-h-[18rem] overflow-y-auto pr-1">
-                <div className="flex flex-wrap gap-2">
-                  {visibleBookmakers.map((bookmaker) => {
-                    const selected =
-                      filters.bookmakerIds.length === 0 ||
-                      filters.bookmakerIds.includes(bookmaker.id);
-
-                    return (
-                      <button
-                        key={bookmaker.id}
-                        type="button"
-                        onClick={() => onToggleBookmaker(bookmaker.id)}
-                        className="rounded-2xl px-3 py-2 text-left text-sm font-medium transition-all"
-                        style={
-                          selected
-                            ? {
-                                backgroundColor: "rgba(34,211,238,0.16)",
-                                border: "1px solid rgba(34,211,238,0.32)",
-                                color: "#22D3EE",
-                              }
-                            : {
-                                backgroundColor: "#0a1020",
-                                border: "1px solid #1e2d42",
-                                color: "#94A3B8",
-                              }
-                        }
-                      >
-                        <span className="block text-sm">{bookmaker.name}</span>
-                      </button>
-                    );
-                  })}
-                  {!visibleBookmakers.length ? (
-                    <div
-                      className="w-full rounded-2xl px-3 py-4 text-sm text-slate-500"
-                      style={{ backgroundColor: "#0a1020", border: "1px solid #1e2d42" }}
-                    >
-                      Nenhuma casa encontrada para essa busca.
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
       {/* Markets */}
       <AnimatePresence initial={false}>
         {showMarkets ? (
@@ -677,7 +559,10 @@ export function ControlPanel({
                     <strong className="text-white">{config.primaryBookmakerName}</strong>.
                   </>
                 ) : (
-                  <>Odds abertas entre várias casas. Cada pick mostra onde está a melhor odd.</>
+                  <>
+                    Odds comparadas automaticamente entre{" "}
+                    <strong className="text-white">{regulatedBookmakerCount} casas reguladas</strong>.
+                  </>
                 )}
               </div>
 

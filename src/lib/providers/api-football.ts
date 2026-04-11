@@ -1,4 +1,5 @@
 import { env } from "@/lib/env";
+import { getRegulatedBookmaker } from "@/lib/constants";
 const API_FOOTBALL_REQUEST_TIMEOUT_MS = 15000;
 const DIRECTORY_CACHE_TTL_MS = 1000 * 60 * 30;
 
@@ -451,18 +452,22 @@ export async function fetchAvailableBookmakers() {
   );
 
   const bookmakers = payload.response
-    .map((entry) => {
+    .flatMap((entry) => {
       if (!entry.id || !entry.name) {
-        return null;
+        return [];
       }
 
-      return {
+      const regulatedBookmaker = getRegulatedBookmaker(entry.name);
+      if (!regulatedBookmaker) {
+        return [];
+      }
+
+      return [{
         id: entry.id,
         name: entry.name,
-        emphasis: "bookmaker ativo",
-      } satisfies SupportedBookmaker;
+        emphasis: regulatedBookmaker.domain,
+      } satisfies SupportedBookmaker];
     })
-    .filter((bookmaker): bookmaker is SupportedBookmaker => Boolean(bookmaker))
     .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 
   bookmakersDirectoryCache = {

@@ -181,6 +181,9 @@ export interface AnalysisPick {
   marketCategory: MarketCategoryId;
   selection: string;
   selectionKey: string;
+  rawMarketName: string;
+  rawSelectionValue: string;
+  rawHandicap: string | null;
   bestOdd: number;
   consensusOdd: number;
   sportsbookCount: number;

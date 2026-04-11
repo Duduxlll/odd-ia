@@ -259,11 +259,11 @@ export function DashboardShell({
       `Multipla sugerida - ${
         initialSnapshot.config.singleBookmakerMode
           ? initialSnapshot.config.primaryBookmakerName
-          : "mercado multi-casa"
+          : "casas reguladas"
       }`,
       ...run.accumulator.picks.map(
         (pick, index) =>
-          `${index + 1}. ${pick.fixtureLabel} | ${pick.marketName} | ${pick.selection} | Odd ${formatOdd(pick.bestOdd)} | Casa ${pick.bookmaker}`,
+          `${index + 1}. ${pick.fixtureLabel} | ${pick.marketName} | ${pick.selection} | Feed ${pick.rawMarketName} / ${pick.rawSelectionValue}${pick.rawHandicap ? ` / ${pick.rawHandicap}` : ""} | Odd ${formatOdd(pick.bestOdd)} | Casa ${pick.bookmaker}`,
       ),
       `Odd combinada: ${formatOdd(run.accumulator.combinedOdd)}`,
     ].join("\n");
@@ -307,22 +307,6 @@ export function DashboardShell({
         ? current.marketCategories.filter((marketId) => marketId !== id)
         : [...current.marketCategories, id],
     }));
-  }
-
-  function toggleBookmaker(id: number) {
-    setFilters((current) => {
-      const nextBookmakerIds =
-        current.bookmakerIds.length === 0
-          ? [id]
-          : current.bookmakerIds.includes(id)
-            ? current.bookmakerIds.filter((bookmakerId) => bookmakerId !== id)
-            : [...current.bookmakerIds, id];
-
-      return {
-        ...current,
-        bookmakerIds: nextBookmakerIds,
-      };
-    });
   }
 
   const picks = run?.picks ?? [];
@@ -372,7 +356,7 @@ export function DashboardShell({
             config={initialSnapshot.config}
             filters={filters}
             leagues={initialSnapshot.supportedLeagues}
-            bookmakers={initialSnapshot.supportedBookmakers}
+            regulatedBookmakerCount={initialSnapshot.supportedBookmakers.length}
             markets={initialSnapshot.supportedMarkets}
             isPending={isAnalyzing}
             isClearing={isClearing}
@@ -380,7 +364,6 @@ export function DashboardShell({
             onClear={handleClear}
             onChange={setFilters}
             onToggleLeague={toggleLeague}
-            onToggleBookmaker={toggleBookmaker}
             onToggleMarket={toggleMarket}
             diagnostics={currentDiagnostics}
           />
