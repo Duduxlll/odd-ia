@@ -600,6 +600,56 @@ function inferStatsLabel(marketName: string) {
   return { marketName: "Mercado de estatísticas", unit: "evento" };
 }
 
+function getMarketSectionPriority(marketCategory: MarketCategoryId): AnalysisSection["id"][] {
+  switch (marketCategory) {
+    case "corners":
+      return ["set_pieces", "style", "matchup", "environment", "weather", "context", "calendar", "discipline", "availability", "form", "offense", "defense", "advanced", "players", "news"];
+    case "goals":
+    case "team_totals":
+      return ["offense", "advanced", "matchup", "defense", "environment", "style", "context", "set_pieces", "availability", "form", "calendar", "discipline", "players", "weather", "news"];
+    case "halves":
+      return ["offense", "matchup", "advanced", "defense", "form", "style", "environment", "context", "set_pieces", "availability", "calendar", "discipline", "players", "weather", "news"];
+    case "shots":
+      return ["offense", "matchup", "style", "advanced", "defense", "environment", "form", "context", "set_pieces", "availability", "calendar", "discipline", "players", "weather", "news"];
+    case "cards":
+      return ["discipline", "context", "style", "calendar", "matchup", "availability", "form", "offense", "defense", "advanced", "set_pieces", "environment", "players", "weather", "news"];
+    case "result":
+    case "handicaps":
+      return ["form", "matchup", "offense", "defense", "advanced", "style", "context", "environment", "set_pieces", "availability", "calendar", "discipline", "players", "weather", "news"];
+    case "players":
+      return ["players", "availability", "offense", "matchup", "form", "style", "advanced", "defense", "context", "set_pieces", "environment", "calendar", "discipline", "weather", "news"];
+    case "stats":
+      return ["style", "matchup", "offense", "defense", "context", "form", "advanced", "set_pieces", "environment", "availability", "calendar", "discipline", "players", "weather", "news"];
+    default:
+      return ["form", "matchup", "offense", "defense", "advanced", "style", "context", "set_pieces", "environment", "availability", "calendar", "discipline", "players", "weather", "news"];
+  }
+}
+
+function sortSectionsByMarket(sections: AnalysisSection[], marketCategory: MarketCategoryId): AnalysisSection[] {
+  const priority = getMarketSectionPriority(marketCategory);
+  return [...sections].sort((a, b) => {
+    const ai = priority.indexOf(a.id);
+    const bi = priority.indexOf(b.id);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
+}
+
+function buildMarketReasons(sections: AnalysisSection[], marketCategory: MarketCategoryId): string[] {
+  const sorted = sortSectionsByMarket(sections, marketCategory);
+  return sorted
+    .filter((section) => section.tone === "support")
+    .flatMap((section) => section.bullets)
+    .slice(0, 4);
+}
+
+function buildMarketCautions(sections: AnalysisSection[], marketCategory: MarketCategoryId): string[] {
+  const sorted = sortSectionsByMarket(sections, marketCategory);
+  return sorted
+    .filter((section) => section.tone === "caution")
+    .flatMap((section) => section.bullets)
+    .slice(0, 3);
+}
+
 function buildMarketPresentation(candidate: RawCandidate) {
   const marketName = candidate.rawMarketName.toLowerCase();
   const direction = selectionDirection(candidate.selection);
@@ -2752,8 +2802,8 @@ function scoreCandidate(candidate: EnrichedCandidate, calibration: CalibrationPr
     ]),
   ].filter((section): section is AnalysisSection => Boolean(section));
 
-  const reasons = sections.filter((section) => section.tone === "support").flatMap((section) => section.bullets).slice(0, 4);
-  const cautions = sections.filter((section) => section.tone !== "support").flatMap((section) => section.bullets).slice(0, 3);
+  const reasons = buildMarketReasons(sections, candidate.marketCategory);
+  const cautions = buildMarketCautions(sections, candidate.marketCategory);
 
   let aiVerdict: AnalysisPick["aiVerdict"] = "lean_yes";
   if (edge >= 0.06 && confidence >= 74) aiVerdict = "strong_yes";
