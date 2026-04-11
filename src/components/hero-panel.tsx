@@ -7,6 +7,12 @@ import { motion } from "framer-motion";
 import type { AnalysisJob, AnalysisRun, ConfigStatus } from "@/lib/types";
 import { formatDateTimeInSaoPaulo, formatOdd } from "@/lib/utils";
 
+type HeroDiagnostics = {
+  totalRemainingToday: number;
+  selectedRemainingToday: number;
+  missingSelectedLeagues: Array<{ id: number; name: string; country: string; emphasis: string }>;
+};
+
 function Metric({
   label,
   value,
@@ -110,12 +116,14 @@ export function HeroPanel({
   config,
   availableLeagueCount,
   availableBookmakerCount,
+  diagnostics,
 }: {
   run: AnalysisRun | null;
   activeJob: AnalysisJob | null;
   config: ConfigStatus;
   availableLeagueCount: number;
   availableBookmakerCount: number;
+  diagnostics: HeroDiagnostics;
 }) {
   const jobPending = activeJob?.status === "queued" || activeJob?.status === "running";
   const filters = activeJob?.filters ?? run?.filters;
@@ -218,7 +226,13 @@ export function HeroPanel({
               <Metric
                 label="Fixtures"
                 value={String(run?.fixturesScanned ?? 0)}
-                detail="janela viva"
+                detail={
+                  diagnostics.selectedRemainingToday
+                    ? `${diagnostics.selectedRemainingToday} restantes hoje no escopo`
+                    : diagnostics.totalRemainingToday
+                      ? "sem jogos futuros nas ligas escolhidas"
+                      : "sem jogos futuros hoje"
+                }
               />
               <Metric
                 label="Mercados"
@@ -248,7 +262,11 @@ export function HeroPanel({
                   : activeJob?.status === "queued"
                     ? "O job já foi persistido na fila e o worker dedicado vai assumir o scan. Isso desacopla o clique do processamento pesado."
                   : run?.executiveSummary ??
-                  "Escolha o recorte e rode a análise. O painel vai preencher resumo, picks, múltipla e leitura de risco sem espalhar tudo em cards gigantes."}
+                    diagnostics.selectedRemainingToday
+                    ? `Hoje restam ${diagnostics.selectedRemainingToday} jogos futuros dentro do escopo atual e ${diagnostics.totalRemainingToday} no total do dia.`
+                    : diagnostics.totalRemainingToday
+                      ? "Hoje ainda há jogos no total, mas as ligas selecionadas ficaram sem partidas futuras até 23:59."
+                      : "Hoje não há mais jogos futuros até 23:59. O radar precisa de fixtures restantes para gerar picks."}
               </p>
             </div>
           </div>

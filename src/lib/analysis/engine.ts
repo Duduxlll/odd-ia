@@ -312,6 +312,16 @@ function filterEligibleFixtures(
     );
 }
 
+function getRemainingFixturesToday(
+  fixtures: ApiFootballFixture[],
+  scanDate: string,
+  horizonHours: number,
+) {
+  return fixtures.filter((fixture) =>
+    isFixtureInsideWindow(fixture.fixture.date, scanDate, horizonHours),
+  );
+}
+
 function selectFixturesForOdds(
   fixtures: ApiFootballFixture[],
   filters: AnalysisFilters,
@@ -3338,6 +3348,11 @@ export async function runFootballAnalysis(
   await reportProgress("Buscando fixtures e montando a janela elegível.");
   const fixturesByDate = await Promise.all(dates.map((date) => getCachedFixturesByDate(date)));
   const fixtures = fixturesByDate.flat();
+  const remainingTodayFixtures = getRemainingFixturesToday(
+    fixtures,
+    filters.scanDate,
+    filters.horizonHours,
+  );
   const eligibleFixtures = filterEligibleFixtures(fixtures, filters);
   const baseFixtureBudget = Math.min(
     eligibleFixtures.length,
@@ -3401,11 +3416,17 @@ export async function runFootballAnalysis(
 
   let executiveSummary = picks.length
     ? `O motor encontrou ${picks.length} picks acima da linha mínima de valor dentro da faixa de odd ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
-    : env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER && !oddsEntries.length
-      ? `A API-Football não retornou mercados da ${bookmakerScopeLabel} para o recorte selecionado. Nesse caso, o radar não tem como montar picks mesmo com fixtures elegíveis.`
-      : rawCandidates.length
-      ? `Foram encontrados mercados com odds, mas nenhum passou no corte final de valor dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
-      : `Foram monitorados ${fixturesForOdds.length} fixtures com odds nesta rodada, mas nenhum mercado elegível entrou no filtro atual.`;
+    : eligibleFixtures.length === 0
+      ? filters.leagueIds.length
+        ? remainingTodayFixtures.length
+          ? `Hoje ainda existem ${remainingTodayFixtures.length} jogos no total até 23:59, mas nenhuma das ligas escolhidas tem partidas futuras nesse recorte.`
+          : "Hoje não restam partidas futuras até 23:59 no radar."
+        : "Hoje não restam partidas futuras até 23:59 no radar."
+      : env.API_FOOTBALL_ONLY_PRIMARY_BOOKMAKER && !oddsEntries.length
+        ? `A API-Football não retornou mercados da ${bookmakerScopeLabel} para o recorte selecionado. Nesse caso, o radar não tem como montar picks mesmo com fixtures elegíveis.`
+        : !rawCandidates.length
+          ? `Existem ${eligibleFixtures.length} fixtures elegíveis hoje, mas nenhuma odd elegível entrou no filtro atual dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`
+          : `Foram encontrados mercados com odds, mas nenhum passou no corte final de valor dentro da faixa ${formatOdd(filters.minOdd)}-${formatOdd(filters.maxOdd)}.`;
   await reportProgress("Pontuando valor, risco e shortlist final.");
   const aiReviewSeed = aiEnabled
     ? balanceItemsByCategory(

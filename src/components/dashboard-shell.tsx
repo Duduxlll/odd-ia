@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BadgePercent,
@@ -25,6 +25,7 @@ import type {
   AnalysisRun,
   DashboardSnapshot,
   MarketCategoryId,
+  SupportedLeague,
 } from "@/lib/types";
 import { formatDateTimeInSaoPaulo, formatOdd, formatPercent } from "@/lib/utils";
 
@@ -53,8 +54,35 @@ export function DashboardShell({
   const [isClearing, setIsClearing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const isActiveJobPending = activeJob?.status === "queued" || activeJob?.status === "running";
   const isAnalyzing = isSubmittingAnalysis || isActiveJobPending;
+  const currentDiagnostics = useMemo(
+    () => buildScanDiagnostics(initialSnapshot.todayFixtures, initialSnapshot.supportedLeagues, filters.leagueIds, nowMs),
+    [filters.leagueIds, initialSnapshot.supportedLeagues, initialSnapshot.todayFixtures, nowMs],
+  );
+  const runDiagnostics = useMemo(
+    () =>
+      buildScanDiagnostics(
+        initialSnapshot.todayFixtures,
+        initialSnapshot.supportedLeagues,
+        run?.filters.leagueIds ?? filters.leagueIds,
+        nowMs,
+      ),
+    [filters.leagueIds, initialSnapshot.supportedLeagues, initialSnapshot.todayFixtures, nowMs, run?.filters.leagueIds],
+  );
+  const timeoutByVolume = Boolean(error && /timeout por volume|tempo limite da vercel/i.test(error));
+  const noFixtureMessage = getNoFixtureMessage(currentDiagnostics, filters.leagueIds.length > 0);
+  const resultDiagnosis = getResultDiagnosis(
+    run,
+    runDiagnostics,
+    (run?.filters.leagueIds ?? []).length > 0,
+  );
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -316,6 +344,7 @@ export function DashboardShell({
             config={initialSnapshot.config}
             availableLeagueCount={initialSnapshot.supportedLeagues.length}
             availableBookmakerCount={initialSnapshot.supportedBookmakers.length}
+            diagnostics={currentDiagnostics}
           />
           <ControlPanel
             config={initialSnapshot.config}
@@ -331,6 +360,7 @@ export function DashboardShell({
             onToggleLeague={toggleLeague}
             onToggleBookmaker={toggleBookmaker}
             onToggleMarket={toggleMarket}
+            diagnostics={currentDiagnostics}
           />
         </section>
 
@@ -355,6 +385,13 @@ export function DashboardShell({
                     : "O scan está em andamento com os filtros atuais. Você pode atualizar a página, e o radar continua processando até gravar a rodada completa."}
                 </p>
                 <AlertBlock tone="amber" message={activeJob.message} />
+                {currentDiagnostics.selectedRemainingToday === 0 ? (
+                  <AlertBlock
+                    tone="amber"
+                    title="Sem fixtures no escopo"
+                    message={noFixtureMessage}
+                  />
+                ) : null}
                 {error ? <AlertBlock tone="rose" message={error} /> : null}
               </div>
             ) : run ? (
@@ -362,17 +399,43 @@ export function DashboardShell({
                 <p className="max-w-3xl text-sm leading-7 text-slate-300">
                   {run.executiveSummary}
                 </p>
+                {resultDiagnosis ? (
+                  <AlertBlock
+                    tone={resultDiagnosis.tone}
+                    title={resultDiagnosis.title}
+                    message={resultDiagnosis.message}
+                  />
+                ) : null}
                 {systemNote ? (
                   <AlertBlock tone="amber" message={systemNote} />
                 ) : null}
-                {error ? <AlertBlock tone="rose" message={error} /> : null}
+                {error ? (
+                  <AlertBlock
+                    tone="rose"
+                    title={timeoutByVolume ? "Timeout por volume" : undefined}
+                    message={error}
+                  />
+                ) : null}
                 {copyFeedback ? (
                   <AlertBlock tone="emerald" message={copyFeedback} />
                 ) : null}
               </div>
             ) : (
               <div className="space-y-4">
-                {error ? <AlertBlock tone="rose" message={error} /> : null}
+                {currentDiagnostics.selectedRemainingToday === 0 ? (
+                  <AlertBlock
+                    tone="amber"
+                    title="Sem fixtures no escopo"
+                    message={noFixtureMessage}
+                  />
+                ) : null}
+                {error ? (
+                  <AlertBlock
+                    tone="rose"
+                    title={timeoutByVolume ? "Timeout por volume" : undefined}
+                    message={error}
+                  />
+                ) : null}
                 <EmptyRunState
                   title="Sem ruído visual até você pedir análise"
                   description="Quando você rodar a primeira rodada, este bloco vira um resumo objetivo com valor encontrado, risco dominante e leitura final da IA."
@@ -744,9 +807,11 @@ function ValidationList({
 
 function AlertBlock({
   tone,
+  title,
   message,
 }: {
   tone: "amber" | "rose" | "emerald";
+  title?: string;
   message: string;
 }) {
   const styles = {
@@ -769,6 +834,9 @@ function AlertBlock({
 
   return (
     <div className="rounded-2xl px-4 py-3 text-sm leading-6" style={styles}>
+      {title ? (
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em]">{title}</p>
+      ) : null}
       {message}
     </div>
   );
@@ -844,4 +912,88 @@ function EmptyFeatureState({
 function formatSigned(value: number) {
   const fixed = value.toFixed(2);
   return value > 0 ? `+${fixed}` : fixed;
+}
+
+type ScanDiagnostics = {
+  totalRemainingToday: number;
+  selectedRemainingToday: number;
+  missingSelectedLeagues: SupportedLeague[];
+};
+
+function buildScanDiagnostics(
+  todayFixtures: DashboardSnapshot["todayFixtures"],
+  supportedLeagues: SupportedLeague[],
+  selectedLeagueIds: number[],
+  nowMs: number,
+): ScanDiagnostics {
+  const remainingToday = todayFixtures.filter((fixture) => {
+    const kickoffAt = new Date(fixture.kickoffAt).getTime();
+    return Number.isFinite(kickoffAt) && kickoffAt > nowMs;
+  });
+
+  const selectedRemainingToday = selectedLeagueIds.length
+    ? remainingToday.filter((fixture) => selectedLeagueIds.includes(fixture.leagueId))
+    : remainingToday;
+  const activeLeagueIds = new Set(remainingToday.map((fixture) => fixture.leagueId));
+  const missingSelectedLeagues = selectedLeagueIds
+    .filter((leagueId) => !activeLeagueIds.has(leagueId))
+    .map((leagueId) => supportedLeagues.find((league) => league.id === leagueId))
+    .filter((league): league is SupportedLeague => Boolean(league));
+
+  return {
+    totalRemainingToday: remainingToday.length,
+    selectedRemainingToday: selectedRemainingToday.length,
+    missingSelectedLeagues,
+  };
+}
+
+function getNoFixtureMessage(diagnostics: ScanDiagnostics, usingLeagueFilter: boolean) {
+  if (!diagnostics.totalRemainingToday) {
+    return "Hoje não restam partidas futuras até 23:59. Nesse cenário o radar zera antes mesmo de buscar odds.";
+  }
+
+  if (usingLeagueFilter && diagnostics.selectedRemainingToday === 0) {
+    const sample = diagnostics.missingSelectedLeagues
+      .slice(0, 4)
+      .map((league) => league.name)
+      .join(", ");
+
+    return sample
+      ? `Hoje ainda existem ${diagnostics.totalRemainingToday} jogos no total até 23:59, mas as ligas selecionadas não têm partidas futuras nesse recorte. Ex.: ${sample}.`
+      : `Hoje ainda existem ${diagnostics.totalRemainingToday} jogos no total até 23:59, mas as ligas selecionadas não têm partidas futuras nesse recorte.`;
+  }
+
+  return `Restam ${diagnostics.selectedRemainingToday} jogos futuros hoje dentro do seu escopo atual.`;
+}
+
+function getResultDiagnosis(
+  run: AnalysisRun | null,
+  diagnostics: ScanDiagnostics,
+  usingLeagueFilter: boolean,
+) {
+  if (!run || run.picks.length > 0) {
+    return null;
+  }
+
+  if (run.fixturesScanned === 0) {
+    return {
+      tone: "amber" as const,
+      title: "Falta de fixture",
+      message: getNoFixtureMessage(diagnostics, usingLeagueFilter),
+    };
+  }
+
+  if (run.candidatesScanned === 0) {
+    return {
+      tone: "amber" as const,
+      title: "Sem odds elegíveis",
+      message: `O radar encontrou ${run.fixturesScanned} jogos futuros no escopo, mas o feed não devolveu odds elegíveis dentro da faixa ${formatOdd(run.filters.minOdd)}-${formatOdd(run.filters.maxOdd)} para o recorte atual.`,
+    };
+  }
+
+  return {
+    tone: "amber" as const,
+    title: "Corte final de valor",
+    message: `O radar encontrou ${run.candidatesScanned} mercados com odds, mas todos ficaram fora do corte final de valor/risco depois do score e da revisão da IA.`,
+  };
 }

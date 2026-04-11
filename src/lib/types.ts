@@ -156,6 +156,15 @@ export interface SupportedMarketCategory {
   accent: string;
 }
 
+export interface TodayFixtureLite {
+  fixtureId: number;
+  leagueId: number;
+  leagueName: string;
+  leagueCountry: string;
+  kickoffAt: string;
+  statusShort: string | null;
+}
+
 export interface AnalysisPick {
   candidateId: string;
   fixtureId: number;
@@ -283,6 +292,7 @@ export interface DashboardSnapshot {
   supportedLeagues: SupportedLeague[];
   supportedBookmakers: SupportedBookmaker[];
   supportedMarkets: SupportedMarketCategory[];
+  todayFixtures: TodayFixtureLite[];
 }
 
 export interface ApiFootballFixture {

@@ -249,7 +249,7 @@ async function normalizeActiveJob(username: string, job: AnalysisJob) {
     job.status === "queued"
       ? "O job ficou tempo demais na fila sem ser assumido pelo worker. Rode novamente para reacender a fila."
       : process.env.VERCEL
-        ? "A análise excedeu o tempo limite da Vercel e foi encerrada. Reduza ligas, janela ou volume de picks e rode novamente."
+        ? "Timeout por volume: a análise excedeu o tempo limite da Vercel e foi encerrada. Reduza ligas, casas, mercados ou volume de picks e rode novamente."
         : "A análise ficou sem atualizar por tempo demais e foi encerrada para evitar travamento.";
 
   await failAnalysisJob(username, job.id, timeoutMessage);

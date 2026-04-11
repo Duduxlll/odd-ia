@@ -22,6 +22,12 @@ import type {
   SupportedMarketCategory,
 } from "@/lib/types";
 
+type ControlPanelDiagnostics = {
+  totalRemainingToday: number;
+  selectedRemainingToday: number;
+  missingSelectedLeagues: SupportedLeague[];
+};
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
@@ -103,6 +109,7 @@ export function ControlPanel({
   onToggleLeague,
   onToggleBookmaker,
   onToggleMarket,
+  diagnostics,
 }: {
   config: ConfigStatus;
   filters: AnalysisFilters;
@@ -117,6 +124,7 @@ export function ControlPanel({
   onToggleLeague: (id: number) => void;
   onToggleBookmaker: (id: number) => void;
   onToggleMarket: (id: MarketCategoryId) => void;
+  diagnostics: ControlPanelDiagnostics;
 }) {
   const [showLeagues, setShowLeagues] = useState(false);
   const [showBookmakers, setShowBookmakers] = useState(false);
@@ -260,6 +268,45 @@ export function ControlPanel({
             style={inputStyle}
           />
         </Field>
+      </div>
+
+      <div
+        className="mt-4 rounded-2xl px-4 py-3 text-xs leading-6"
+        style={{
+          backgroundColor:
+            diagnostics.selectedRemainingToday > 0
+              ? "rgba(34,211,238,0.08)"
+              : "rgba(251,191,36,0.08)",
+          border:
+            diagnostics.selectedRemainingToday > 0
+              ? "1px solid rgba(34,211,238,0.20)"
+              : "1px solid rgba(251,191,36,0.20)",
+          color: diagnostics.selectedRemainingToday > 0 ? "#67E8F9" : "#FCD34D",
+        }}
+      >
+        {diagnostics.selectedRemainingToday > 0 ? (
+          <>
+            Restam <strong>{diagnostics.selectedRemainingToday}</strong> jogos futuros hoje no seu
+            escopo atual e <strong>{diagnostics.totalRemainingToday}</strong> no total do dia.
+          </>
+        ) : diagnostics.totalRemainingToday > 0 ? (
+          <>
+            Nessas ligas não há partidas futuras hoje até 23:59. Ainda existem{" "}
+            <strong>{diagnostics.totalRemainingToday}</strong> jogos no total do dia.
+            {diagnostics.missingSelectedLeagues.length ? (
+              <>
+                {" "}Sem jogos futuros agora em:{" "}
+                {diagnostics.missingSelectedLeagues
+                  .slice(0, 4)
+                  .map((league) => league.name)
+                  .join(", ")}
+                .
+              </>
+            ) : null}
+          </>
+        ) : (
+          <>Hoje não restam partidas futuras até 23:59. O radar zera antes de buscar odds.</>
+        )}
       </div>
 
       {/* Section toggles */}

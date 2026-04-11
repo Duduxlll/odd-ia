@@ -12,12 +12,13 @@ import {
   getPerformanceSummary,
 } from "@/lib/db";
 import { getConfigStatus } from "@/lib/env";
+import { getCachedFixturesByDate } from "@/lib/prefetch";
 import {
   fetchAvailableBookmakers,
   fetchAvailableLeagues,
 } from "@/lib/providers/api-football";
 import type { OperationsStatus, PerformanceSummary } from "@/lib/types";
-import { withTimeoutFallback } from "@/lib/utils";
+import { getTodayDateInSaoPaulo, withTimeoutFallback } from "@/lib/utils";
 
 const EMPTY_PERFORMANCE: PerformanceSummary = {
   totalTracked: 0,
@@ -62,7 +63,8 @@ const EMPTY_OPERATIONS: OperationsStatus = {
 
 export async function getDashboardSnapshot(username: string) {
   await ensureSchema();
-  const [latestRun, performance, dashboardState, operations, allLeagues, allBookmakers] =
+  const today = getTodayDateInSaoPaulo();
+  const [latestRun, performance, dashboardState, operations, allLeagues, allBookmakers, todayFixtures] =
     await Promise.all([
       withTimeoutFallback(getLatestAnalysisRun(username), 8000, null),
       withTimeoutFallback(getPerformanceSummary(username), 6000, EMPTY_PERFORMANCE),
@@ -79,6 +81,11 @@ export async function getDashboardSnapshot(username: string) {
       ),
       withTimeoutFallback(
         fetchAvailableBookmakers().catch(() => []),
+        4000,
+        [],
+      ),
+      withTimeoutFallback(
+        getCachedFixturesByDate(today).catch(() => []),
         4000,
         [],
       ),
@@ -106,5 +113,18 @@ export async function getDashboardSnapshot(username: string) {
     supportedLeagues: mergedLeagues,
     supportedBookmakers: allBookmakers,
     supportedMarkets: SUPPORTED_MARKETS,
+    todayFixtures: todayFixtures
+      .filter((fixture) => {
+        const kickoffAt = new Date(fixture.fixture.date).getTime();
+        return Number.isFinite(kickoffAt) && kickoffAt > Date.now();
+      })
+      .map((fixture) => ({
+        fixtureId: fixture.fixture.id,
+        leagueId: fixture.league.id,
+        leagueName: fixture.league.name,
+        leagueCountry: fixture.league.country,
+        kickoffAt: fixture.fixture.date,
+        statusShort: fixture.fixture.status?.short ?? null,
+      })),
   };
 }
