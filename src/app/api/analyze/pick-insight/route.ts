@@ -7,7 +7,7 @@ import { env } from "@/lib/env";
 import type { AnalysisPick } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 type InsightDirection = "favor" | "caution";
 
@@ -59,14 +59,14 @@ DADOS REAIS DO JOGO:
 ${sectionsText}
 
 INSTRUÇÕES:
-Escreva 3 parágrafos explicando por que "${pick.selection}" tem chance de bater.
+Escreva 3 parágrafos fluidos (sem bullets, sem listas) explicando por que "${pick.selection}" tem chance de bater.
 Foque EXCLUSIVAMENTE no mercado "${pick.marketCategory}" — use os dados reais acima.
-Se for escanteios: mencione médias de corners, estilo de jogo, tendências de bola parada.
-Se for gols: mencione produção ofensiva, xG, defesas, médias de gols.
-Se for chutes: mencione volume de chutes, chutes no alvo, estilo tático.
-Se for cartões: mencione árbitro, histórico disciplinar, contexto do jogo.
-Se for resultado/handicap: mencione forma, confronto direto, força relativa.
-Seja específico com os números reais. Não invente dados. Tom analítico e direto.`;
+Se for escanteios: fale sobre as médias de corners das equipes, estilo de jogo, cruzamentos, bola parada.
+Se for gols: fale sobre produção ofensiva, xG, qualidade das defesas, médias de gols por jogo.
+Se for chutes: fale sobre volume de chutes, chutes no alvo, pressão e estilo tático.
+Se for cartões: fale sobre o árbitro (média de cartões), histórico disciplinar dos times, contexto do jogo.
+Se for resultado/handicap: fale sobre forma recente, força relativa, confrontos diretos.
+Seja específico com os números reais dos dados. Não invente dados. Tom analítico e direto.`;
   }
 
   return `Você é um analista de apostas esportivas especializado. Analise esta aposta e escreva por que ela PODE NÃO BATER — os riscos reais.
@@ -83,14 +83,14 @@ DADOS REAIS DO JOGO:
 ${sectionsText}
 
 INSTRUÇÕES:
-Escreva 3 parágrafos explicando os RISCOS e por que "${pick.selection}" pode falhar.
+Escreva 3 parágrafos fluidos (sem bullets, sem listas) explicando os RISCOS e por que "${pick.selection}" pode falhar.
 Foque EXCLUSIVAMENTE no mercado "${pick.marketCategory}" — use os dados reais acima.
-Se for escanteios: o que poderia reduzir os corners nesse jogo? Times fechados? Jogo direto?
-Se for gols: o que pode travar o placar? Defesas sólidas? Motivação? Contexto?
-Se for chutes: o que pode diminuir o volume de chutes? Pressão baixa? Jogo reativo?
-Se for cartões: o que pode fazer o jogo ser limpo? Árbitro permissivo? Jogo amistoso?
+Se for escanteios: o que poderia reduzir os corners? Times que jogam fechados? Jogo direto sem cruzamentos?
+Se for gols: o que pode travar o placar? Defesas sólidas? Falta de motivação? Contexto eliminatório?
+Se for chutes: o que pode diminuir o volume? Jogo reativo? Times que recuam?
+Se for cartões: o que pode fazer o jogo ser limpo? Árbitro permissivo? Jogo sem rivalidade?
 Se for resultado/handicap: o que pode fazer o favoritismo não se confirmar?
-Seja específico com os números reais. Não invente dados. Tom analítico e honesto.`;
+Seja específico com os números reais dos dados. Não invente dados. Tom analítico e honesto.`;
 }
 
 export async function POST(request: Request) {
@@ -115,25 +115,28 @@ export async function POST(request: Request) {
     }
 
     const client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-
     const prompt = buildInsightPrompt(body);
 
-    const response = await client.chat.completions.create(
+    const response = await client.responses.create(
       {
-        model: "gpt-4o",
-        temperature: 0.4,
-        max_tokens: 600,
-        messages: [
+        model: env.OPENAI_MODEL,
+        reasoning: { effort: "low" },
+        instructions:
+          "Você é um analista de apostas esportivas. Responda sempre em português. Escreva parágrafos corridos, sem bullets, sem listas, sem marcadores. Use os dados reais fornecidos e foque exclusivamente no mercado da aposta.",
+        input: [
           {
             role: "user",
-            content: prompt,
+            content: [{ type: "input_text", text: prompt }],
           },
         ],
+        text: {
+          format: { type: "text" },
+        },
       },
-      { timeout: 45 * 1000 },
+      { timeout: 4 * 60 * 1000 },
     );
 
-    const analysis = response.choices[0]?.message?.content?.trim() ?? "";
+    const analysis = response.output_text?.trim() ?? "";
     if (!analysis) {
       return NextResponse.json({ error: "IA não retornou análise." }, { status: 500 });
     }

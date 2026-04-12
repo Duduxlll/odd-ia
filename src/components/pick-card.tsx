@@ -483,75 +483,56 @@ export function PickCard({
                   border: "1px solid rgba(52,211,153,0.18)",
                 }}
               >
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">
-                    Por que deve bater
-                  </p>
-                </div>
-                <div className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
-                  {pick.reasons.map((reason) => (
-                    <p key={reason}>✓ {reason}</p>
-                  ))}
-                </div>
-                {pick.analysisSections.filter((s) => s.tone === "support").length > 0 ? (
-                  <div className="mt-4 space-y-3">
-                    {pick.analysisSections
-                      .filter((s) => s.tone === "support")
-                      .map((section) => (
-                        <div key={`favor:${section.id}`}>
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-600">
-                            {section.label}
-                          </p>
-                          <div className="mt-1 space-y-1 text-sm leading-6 text-slate-400">
-                            {section.bullets.map((bullet) => (
-                              <p key={bullet}>· {bullet}</p>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                ) : null}
-
-                {/* Botão de análise profunda — A favor */}
-                <div className="mt-4 border-t pt-4" style={{ borderColor: "rgba(52,211,153,0.15)" }}>
-                  {favorInsight ? (
-                    <div>
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-500">
-                        Análise profunda — por que vai bater
+                {favorInsight ? (
+                  <div>
+                    <div className="mb-3 flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">
+                        Por que vai bater
                       </p>
-                      <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
-                        {favorInsight}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setFavorInsight(null)}
-                        className="mt-3 text-[11px] text-slate-600 underline hover:text-slate-400"
-                      >
-                        Limpar análise
-                      </button>
                     </div>
-                  ) : (
+                    <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
+                      {favorInsight}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setFavorInsight(null)}
+                      className="mt-4 text-[11px] text-slate-600 underline hover:text-slate-400"
+                    >
+                      Gerar nova análise
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-start gap-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">
+                        A favor
+                      </p>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      A IA vai analisar especificamente por que essa aposta tem chance de bater, com base nos dados reais do jogo.
+                    </p>
                     <button
                       type="button"
                       onClick={() => handleInsight("favor")}
                       disabled={isLoadingFavor}
-                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all disabled:cursor-wait disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:cursor-wait disabled:opacity-60"
                       style={{
-                        backgroundColor: "rgba(52,211,153,0.10)",
-                        border: "1px solid rgba(52,211,153,0.25)",
+                        backgroundColor: "rgba(52,211,153,0.14)",
+                        border: "1px solid rgba(52,211,153,0.30)",
                         color: "#34D399",
                       }}
                     >
                       {isLoadingFavor ? (
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <RefreshCw className="h-4 w-4 animate-spin" />
                       ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
+                        <Sparkles className="h-4 w-4" />
                       )}
-                      {isLoadingFavor ? "Analisando..." : "Analisar por que vai bater"}
+                      {isLoadingFavor ? "Analisando... aguarde 1-2 min" : "Analisar por que vai bater"}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           ) : null}
@@ -574,81 +555,52 @@ export function PickCard({
                   border: "1px solid rgba(251,113,133,0.28)",
                 }}
               >
-                <div className="flex items-center gap-2">
-                  <ShieldAlert className="h-4 w-4 text-rose-400" />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-400">
-                    ⚠ Tomar Cuidado
-                  </p>
-                </div>
-                <p className="mt-1 text-[11px] text-rose-600">
-                  Esses fatores podem impedir a aposta de bater — leia antes de apostar.
-                </p>
-                <div className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
-                  {pick.cautions.map((caution) => (
-                    <p key={caution}>⚡ {caution}</p>
-                  ))}
-                  {pick.newsNote ? (
-                    <p className="text-amber-300">📰 {pick.newsNote}</p>
-                  ) : null}
-                </div>
-                {pick.analysisSections.filter((s) => s.tone === "caution").length > 0 ? (
-                  <div className="mt-4 space-y-3">
-                    {pick.analysisSections
-                      .filter((s) => s.tone === "caution")
-                      .map((section) => (
-                        <div key={`caution:${section.id}`}>
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-rose-600">
-                            {section.label}
-                          </p>
-                          <div className="mt-1 space-y-1 text-sm leading-6 text-slate-400">
-                            {section.bullets.map((bullet) => (
-                              <p key={bullet}>· {bullet}</p>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                ) : null}
-
-                {/* Botão de análise profunda — Tomar Cuidado */}
-                <div className="mt-4 border-t pt-4" style={{ borderColor: "rgba(251,113,133,0.15)" }}>
-                  {cautionInsight ? (
-                    <div>
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-rose-500">
-                        Análise profunda — por que pode falhar
+                {cautionInsight ? (
+                  <div>
+                    <div className="mb-3 flex items-center gap-2">
+                      <ShieldAlert className="h-4 w-4 text-rose-400" />
+                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-400">
+                        Por que pode falhar
                       </p>
-                      <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
-                        {cautionInsight}
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
+                      {cautionInsight}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCautionInsight(null)}
+                      className="mt-4 text-[11px] text-slate-600 underline hover:text-slate-400"
+                    >
+                      Gerar nova análise
+                    </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-start gap-3">
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="h-4 w-4 text-rose-400" />
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-rose-400">
+                          Tomar Cuidado
+                        </p>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        A IA vai analisar os riscos e por que essa aposta pode não bater, com base nos dados reais do jogo.
                       </p>
                       <button
                         type="button"
-                        onClick={() => setCautionInsight(null)}
-                        className="mt-3 text-[11px] text-slate-600 underline hover:text-slate-400"
+                        onClick={() => handleInsight("caution")}
+                        disabled={isLoadingCaution}
+                        className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition-all disabled:cursor-wait disabled:opacity-60"
+                        style={{
+                          backgroundColor: "rgba(251,113,133,0.12)",
+                          border: "1px solid rgba(251,113,133,0.28)",
+                          color: "#FB7185",
+                        }}
                       >
-                        Limpar análise
+                        {isLoadingCaution ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />}
+                        {isLoadingCaution ? "Analisando... aguarde 1-2 min" : "Analisar por que pode falhar"}
                       </button>
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleInsight("caution")}
-                      disabled={isLoadingCaution}
-                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all disabled:cursor-wait disabled:opacity-60"
-                      style={{
-                        backgroundColor: "rgba(251,113,133,0.10)",
-                        border: "1px solid rgba(251,113,133,0.25)",
-                        color: "#FB7185",
-                      }}
-                    >
-                      {isLoadingCaution ? (
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <ShieldAlert className="h-3.5 w-3.5" />
-                      )}
-                      {isLoadingCaution ? "Analisando..." : "Analisar por que pode falhar"}
-                    </button>
                   )}
-                </div>
               </div>
             </motion.div>
           ) : null}
