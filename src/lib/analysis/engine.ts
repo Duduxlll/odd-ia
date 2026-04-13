@@ -3509,6 +3509,8 @@ export async function runFootballAnalysis(
   username = "default",
   options?: {
     onProgress?: (message: string) => Promise<void> | void;
+    /** When true, the run is NOT saved to the DB (so it won't appear in the dashboard). */
+    skipPersistence?: boolean;
   },
 ) {
   const aiEnabled = Boolean(env.OPENAI_API_KEY);
@@ -3788,6 +3790,7 @@ export async function runFootballAnalysis(
   run.systemNote = `${run.systemNote} Worker dedicado, pré-coleta contínua de fixtures/odds e calibração histórica do modelo estão ativos.`;
 
   await reportProgress("Persistindo a rodada e fechando o scan.");
+  if (options?.skipPersistence) return run;
   await saveAnalysisRun(
     run,
     username,

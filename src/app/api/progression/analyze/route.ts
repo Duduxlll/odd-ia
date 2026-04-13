@@ -3,7 +3,7 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
-import { DEFAULT_FILTERS, TOP_FOOTBALL_LEAGUES } from "@/lib/constants";
+import { DEFAULT_FILTERS } from "@/lib/constants";
 import {
   failProgressionDayAnalysis,
   getActiveProgressionSession,
@@ -25,39 +25,33 @@ async function requireSession() {
   return session;
 }
 
-const PRIORITY_LEAGUE_IDS = [39, 140, 135, 78, 71]; // PL, La Liga, Serie A, Bundesliga, Brasileirão
-
 const schema = z.object({
   sessionId: z.string(),
   dayNumber: z.number().int().min(1),
   stake: z.number().min(0.01),
-  leagueMode: z.enum(["all", "priority"]).default("priority"),
-  marketCategories: z.array(z.enum(["result", "goals", "halves", "handicaps", "corners", "cards", "shots", "stats", "players", "team_totals"])).default(["result", "goals", "halves", "handicaps"]),
+  /** League IDs to scan. Empty array = all supported leagues. */
+  leagueIds: z.array(z.number()).default([]),
+  marketCategories: z.array(
+    z.enum(["result", "goals", "halves", "handicaps", "corners", "cards", "shots", "stats", "players", "team_totals"]),
+  ).default(["result", "goals"]),
 });
 
 const ODD_MIN = 1.50;
 const ODD_MAX = 1.60;
 
 /**
- * Fast path: check picks from recent DB analysis runs (last 48h) before running the full engine.
+ * Fast path: check picks already in DB from past runs (last 48h) before burning full engine time.
  */
-async function findPickFast(
-  username: string,
-  leagueIds: number[],
-  marketCategories: string[],
-) {
-  const picks = await getRecentPicksInRange(username, ODD_MIN, ODD_MAX, leagueIds, marketCategories);
+async function findPickFast(username: string, leagueIds: number[], marketCategories: string[]) {
+  const picks = await getRecentPicksInRange(username, ODD_MIN, ODD_MAX, leagueIds.length ? leagueIds : undefined, marketCategories);
   return picks.find((p) => p.bestOdd >= ODD_MIN && p.bestOdd <= ODD_MAX) ?? null;
 }
 
 /**
- * Run the full engine. Tries 36h then 60h horizon to maximise coverage.
+ * Full engine run. Results are NOT saved to DB (skipPersistence) so they don't pollute the dashboard.
+ * Tries 36h then 60h horizon to maximise coverage.
  */
-async function findBestPickFull(
-  username: string,
-  leagueIds: number[],
-  marketCategories: string[],
-) {
+async function findBestPickFull(username: string, leagueIds: number[], marketCategories: string[]) {
   for (const horizonHours of [36, 60]) {
     const result = await runFootballAnalysis(
       {
@@ -69,11 +63,12 @@ async function findBestPickFull(
         pickCount: 10,
         reasoningEffort: "high",
         useWebSearch: false,
-        leagueIds,
+        leagueIds: leagueIds.length ? leagueIds : DEFAULT_FILTERS.leagueIds,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        marketCategories: marketCategories as any,
+        marketCategories: (marketCategories as any),
       },
       username,
+      { skipPersistence: true },
     );
 
     const bestPick = (result?.picks ?? []).find(
@@ -105,10 +100,7 @@ export async function POST(request: Request) {
     await setProgressionDayAnalyzing(body.sessionId, authSession.username, body.dayNumber, body.stake);
 
     const username = authSession.username;
-    const { sessionId, dayNumber, leagueMode, marketCategories } = body;
-    const leagueIds = leagueMode === "priority"
-      ? PRIORITY_LEAGUE_IDS
-      : TOP_FOOTBALL_LEAGUES.map((l) => l.id);
+    const { sessionId, dayNumber, leagueIds, marketCategories } = body;
 
     after(async () => {
       try {
@@ -116,7 +108,7 @@ export async function POST(request: Request) {
         let bestPick = await findPickFast(username, leagueIds, marketCategories);
 
         if (!bestPick) {
-          // Full engine run
+          // Full engine run (isolated — not saved to dashboard)
           bestPick = await findBestPickFull(username, leagueIds, marketCategories);
         }
 

@@ -17,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { MARKET_RULES, TOP_FOOTBALL_LEAGUES } from "@/lib/constants";
 import type { ProgressionDay, ProgressionSession } from "@/lib/types";
 
 type Props = {
@@ -140,18 +141,10 @@ function StartScreen({ onStart }: { onStart: (amount: number) => Promise<void> }
   );
 }
 
-// ─── Selectors ─────────────────────────────────────────────────────────────
+// Priority leagues — PL, La Liga, Serie A, Bundesliga, Brasileirão
+const DEFAULT_LEAGUE_IDS = [39, 140, 135, 78, 71];
 
-type LeagueMode = "all" | "priority";
-type MarketPreset = "result" | "goals" | "halves" | "handicaps" | "tudo";
-
-const MARKET_PRESETS: Record<MarketPreset, { label: string; categories: string[] }> = {
-  result:    { label: "Resultado",  categories: ["result"] },
-  goals:     { label: "Gols",       categories: ["goals"] },
-  halves:    { label: "1º Tempo",   categories: ["halves"] },
-  handicaps: { label: "Handicap",   categories: ["handicaps"] },
-  tudo:      { label: "Tudo",       categories: ["result", "goals", "halves", "handicaps", "corners", "cards"] },
-};
+type LeagueCountEntry = { id: number; name: string; country: string; count: number };
 
 // ─── Day Row ───────────────────────────────────────────────────────────────
 
@@ -163,13 +156,16 @@ function DayRow({
 }: {
   day: ProgressionDay;
   isNextDay: boolean;
-  onOpen: (dayNumber: number, stake: number, leagueMode: LeagueMode, marketCategories: string[]) => Promise<void>;
+  onOpen: (dayNumber: number, stake: number, leagueIds: number[], marketCategories: string[]) => Promise<void>;
   onSettle: (dayNumber: number, force?: "won" | "lost") => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(day.status === "open" || (isNextDay && day.status === "pending"));
   const [loading, setLoading] = useState(false);
-  const [leagueMode, setLeagueMode] = useState<LeagueMode>("priority");
-  const [marketPreset, setMarketPreset] = useState<MarketPreset>("result");
+  const [selectedLeagueIds, setSelectedLeagueIds] = useState<number[]>(DEFAULT_LEAGUE_IDS);
+  const [selectedMarketIds, setSelectedMarketIds] = useState<string[]>(["result", "goals"]);
+  const [leagueEntries, setLeagueEntries] = useState<LeagueCountEntry[]>([]);
+  const leaguesLoadedRef = useRef(false);
+
   const colors = statusColors(day.status);
   const isLocked = !isNextDay && day.status === "pending";
   const prevStatusRef = useRef(day.status);
@@ -182,9 +178,21 @@ function DayRow({
     prevStatusRef.current = day.status;
   }, [day.status]);
 
+  // Load league fixture counts once when this day's selector panel is visible
+  useEffect(() => {
+    if (!isNextDay || day.status !== "pending" || !expanded || leaguesLoadedRef.current) return;
+    leaguesLoadedRef.current = true;
+    fetch("/api/progression/fixtures", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data: { leagues?: LeagueCountEntry[] }) => {
+        if (data.leagues) setLeagueEntries(data.leagues);
+      })
+      .catch(() => null);
+  }, [isNextDay, day.status, expanded]);
+
   async function handleOpen() {
     setLoading(true);
-    try { await onOpen(day.dayNumber, day.stake, leagueMode, MARKET_PRESETS[marketPreset].categories); } finally { setLoading(false); }
+    try { await onOpen(day.dayNumber, day.stake, selectedLeagueIds, selectedMarketIds); } finally { setLoading(false); }
   }
 
   async function handleSettle(force?: "won" | "lost") {
@@ -272,46 +280,93 @@ function DayRow({
 
               {/* Selectors + Analyze — only on next pending day */}
               {isNextDay && (day.status === "pending" || day.status === "analyzing") && (
-                <div className="mt-1 flex flex-col gap-2.5 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <div className="mt-1 flex flex-col gap-3 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+
                   {/* League selector */}
                   <div>
-                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">Ligas</p>
-                    <div className="flex gap-1.5">
-                      {(["priority", "all"] as LeagueMode[]).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          disabled={day.status === "analyzing"}
-                          onClick={() => setLeagueMode(mode)}
-                          className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed"
-                          style={leagueMode === mode
-                            ? { background: "rgba(34,211,238,0.14)", border: "1px solid rgba(34,211,238,0.35)", color: "#22d3ee" }
-                            : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", color: "#64748b" }}
-                        >
-                          {mode === "priority" ? "Prioritárias" : "Todas"}
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Ligas</p>
+                      <div className="flex gap-3">
+                        <button type="button" disabled={day.status === "analyzing"}
+                          onClick={() => setSelectedLeagueIds(TOP_FOOTBALL_LEAGUES.map((l) => l.id))}
+                          className="text-[10px] text-slate-600 transition-colors hover:text-cyan-400 disabled:cursor-not-allowed">
+                          Todas
                         </button>
-                      ))}
+                        <button type="button" disabled={day.status === "analyzing"}
+                          onClick={() => setSelectedLeagueIds(DEFAULT_LEAGUE_IDS)}
+                          className="text-[10px] text-slate-600 transition-colors hover:text-cyan-400 disabled:cursor-not-allowed">
+                          Prioritárias
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(leagueEntries.length > 0 ? leagueEntries : TOP_FOOTBALL_LEAGUES.map((l) => ({ ...l, count: undefined as number | undefined }))).map((league) => {
+                        const isSelected = selectedLeagueIds.includes(league.id);
+                        return (
+                          <button
+                            key={league.id}
+                            type="button"
+                            disabled={day.status === "analyzing"}
+                            onClick={() => setSelectedLeagueIds((prev) =>
+                              prev.includes(league.id) ? prev.filter((id) => id !== league.id) : [...prev, league.id]
+                            )}
+                            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all disabled:cursor-not-allowed"
+                            style={isSelected
+                              ? { background: "rgba(34,211,238,0.12)", border: "1px solid rgba(34,211,238,0.35)", color: "#22d3ee" }
+                              : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", color: "#475569" }}
+                          >
+                            <span>{league.name}</span>
+                            {"count" in league && typeof league.count === "number" && (
+                              <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                                style={isSelected
+                                  ? { background: "rgba(34,211,238,0.20)", color: "#22d3ee" }
+                                  : { background: "rgba(255,255,255,0.06)", color: "#64748b" }}>
+                                {league.count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* Market selector */}
                   <div>
-                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">Mercado</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(Object.keys(MARKET_PRESETS) as MarketPreset[]).map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          disabled={day.status === "analyzing"}
-                          onClick={() => setMarketPreset(preset)}
-                          className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed"
-                          style={marketPreset === preset
-                            ? { background: "rgba(99,102,241,0.18)", border: "1px solid rgba(99,102,241,0.40)", color: "#a5b4fc" }
-                            : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", color: "#64748b" }}
-                        >
-                          {MARKET_PRESETS[preset].label}
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Mercados</p>
+                      <div className="flex gap-3">
+                        <button type="button" disabled={day.status === "analyzing"}
+                          onClick={() => setSelectedMarketIds(MARKET_RULES.map((m) => m.id))}
+                          className="text-[10px] text-slate-600 transition-colors hover:text-indigo-400 disabled:cursor-not-allowed">
+                          Todos
                         </button>
-                      ))}
+                        <button type="button" disabled={day.status === "analyzing"}
+                          onClick={() => setSelectedMarketIds(["result", "goals"])}
+                          className="text-[10px] text-slate-600 transition-colors hover:text-indigo-400 disabled:cursor-not-allowed">
+                          Resetar
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {MARKET_RULES.map((market) => {
+                        const isSelected = selectedMarketIds.includes(market.id);
+                        return (
+                          <button
+                            key={market.id}
+                            type="button"
+                            disabled={day.status === "analyzing"}
+                            onClick={() => setSelectedMarketIds((prev) =>
+                              prev.includes(market.id) ? prev.filter((id) => id !== market.id) : [...prev, market.id]
+                            )}
+                            className="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all disabled:cursor-not-allowed"
+                            style={isSelected
+                              ? { background: "rgba(99,102,241,0.16)", border: "1px solid rgba(99,102,241,0.40)", color: "#a5b4fc" }
+                              : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", color: "#475569" }}
+                          >
+                            {market.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -319,7 +374,7 @@ function DayRow({
                   <button
                     type="button"
                     onClick={handleOpen}
-                    disabled={loading || day.status === "analyzing"}
+                    disabled={loading || day.status === "analyzing" || selectedLeagueIds.length === 0 || selectedMarketIds.length === 0}
                     className="inline-flex items-center gap-2 self-start rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity disabled:opacity-60"
                     style={{ background: "linear-gradient(135deg, rgba(34,211,238,0.14) 0%, rgba(99,102,241,0.14) 100%)", border: "1px solid rgba(34,211,238,0.32)", color: "#22d3ee" }}
                   >
@@ -449,12 +504,12 @@ export function ProgressionShell({ initialActive, initialHistory }: Props) {
   }
 
   // ── Open a day (trigger analysis) ────────────────────────────────────────
-  async function handleOpen(dayNumber: number, stake: number, leagueMode: LeagueMode, marketCategories: string[]) {
+  async function handleOpen(dayNumber: number, stake: number, leagueIds: number[], marketCategories: string[]) {
     if (!active) return;
     const res = await fetch("/api/progression/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: active.id, dayNumber, stake, leagueMode, marketCategories }),
+      body: JSON.stringify({ sessionId: active.id, dayNumber, stake, leagueIds, marketCategories }),
     });
     const data = (await res.json()) as { error?: string };
     if (!res.ok) throw new Error(data.error ?? "Erro ao analisar.");
