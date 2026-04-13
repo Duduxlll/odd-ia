@@ -7,6 +7,7 @@ import { DEFAULT_FILTERS, TOP_FOOTBALL_LEAGUES } from "@/lib/constants";
 import {
   failProgressionDayAnalysis,
   getActiveProgressionSession,
+  getRecentPicksInRange,
   openProgressionDay,
   setProgressionDayAnalyzing,
 } from "@/lib/db";
@@ -24,20 +25,39 @@ async function requireSession() {
   return session;
 }
 
+const PRIORITY_LEAGUE_IDS = [39, 140, 135, 78, 71]; // PL, La Liga, Serie A, Bundesliga, Brasileirão
+
 const schema = z.object({
   sessionId: z.string(),
   dayNumber: z.number().int().min(1),
   stake: z.number().min(0.01),
+  leagueMode: z.enum(["all", "priority"]).default("priority"),
+  marketCategories: z.array(z.enum(["result", "goals", "halves", "handicaps", "corners", "cards", "shots", "stats", "players", "team_totals"])).default(["result", "goals", "halves", "handicaps"]),
 });
 
 const ODD_MIN = 1.50;
 const ODD_MAX = 1.60;
 
 /**
- * Run the engine once. On the first attempt use a 36h window to maximise
- * coverage; if no in-range pick is found, widen to 60h.
+ * Fast path: check picks from recent DB analysis runs (last 48h) before running the full engine.
  */
-async function findBestPick(username: string) {
+async function findPickFast(
+  username: string,
+  leagueIds: number[],
+  marketCategories: string[],
+) {
+  const picks = await getRecentPicksInRange(username, ODD_MIN, ODD_MAX, leagueIds, marketCategories);
+  return picks.find((p) => p.bestOdd >= ODD_MIN && p.bestOdd <= ODD_MAX) ?? null;
+}
+
+/**
+ * Run the full engine. Tries 36h then 60h horizon to maximise coverage.
+ */
+async function findBestPickFull(
+  username: string,
+  leagueIds: number[],
+  marketCategories: string[],
+) {
   for (const horizonHours of [36, 60]) {
     const result = await runFootballAnalysis(
       {
@@ -49,13 +69,13 @@ async function findBestPick(username: string) {
         pickCount: 10,
         reasoningEffort: "high",
         useWebSearch: false,
-        leagueIds: TOP_FOOTBALL_LEAGUES.map((l) => l.id),
-        marketCategories: ["result", "goals", "halves", "handicaps"],
+        leagueIds,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        marketCategories: marketCategories as any,
       },
       username,
     );
 
-    // Only accept picks strictly within the target range
     const bestPick = (result?.picks ?? []).find(
       (p) => p.bestOdd >= ODD_MIN && p.bestOdd <= ODD_MAX,
     ) ?? null;
@@ -85,11 +105,20 @@ export async function POST(request: Request) {
     await setProgressionDayAnalyzing(body.sessionId, authSession.username, body.dayNumber, body.stake);
 
     const username = authSession.username;
-    const { sessionId, dayNumber } = body;
+    const { sessionId, dayNumber, leagueMode, marketCategories } = body;
+    const leagueIds = leagueMode === "priority"
+      ? PRIORITY_LEAGUE_IDS
+      : TOP_FOOTBALL_LEAGUES.map((l) => l.id);
 
     after(async () => {
       try {
-        const bestPick = await findBestPick(username);
+        // Fast path: check existing DB picks first (avoids full engine run when possible)
+        let bestPick = await findPickFast(username, leagueIds, marketCategories);
+
+        if (!bestPick) {
+          // Full engine run
+          bestPick = await findBestPickFull(username, leagueIds, marketCategories);
+        }
 
         if (!bestPick) {
           // No pick found — reset to pending so user can try again

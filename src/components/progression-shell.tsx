@@ -140,6 +140,19 @@ function StartScreen({ onStart }: { onStart: (amount: number) => Promise<void> }
   );
 }
 
+// ─── Selectors ─────────────────────────────────────────────────────────────
+
+type LeagueMode = "all" | "priority";
+type MarketPreset = "result" | "goals" | "halves" | "handicaps" | "tudo";
+
+const MARKET_PRESETS: Record<MarketPreset, { label: string; categories: string[] }> = {
+  result:    { label: "Resultado",  categories: ["result"] },
+  goals:     { label: "Gols",       categories: ["goals"] },
+  halves:    { label: "1º Tempo",   categories: ["halves"] },
+  handicaps: { label: "Handicap",   categories: ["handicaps"] },
+  tudo:      { label: "Tudo",       categories: ["result", "goals", "halves", "handicaps", "corners", "cards"] },
+};
+
 // ─── Day Row ───────────────────────────────────────────────────────────────
 
 function DayRow({
@@ -150,11 +163,13 @@ function DayRow({
 }: {
   day: ProgressionDay;
   isNextDay: boolean;
-  onOpen: (dayNumber: number, stake: number) => Promise<void>;
+  onOpen: (dayNumber: number, stake: number, leagueMode: LeagueMode, marketCategories: string[]) => Promise<void>;
   onSettle: (dayNumber: number, force?: "won" | "lost") => Promise<void>;
 }) {
-  const [expanded, setExpanded] = useState(day.status === "open");
+  const [expanded, setExpanded] = useState(day.status === "open" || (isNextDay && day.status === "pending"));
   const [loading, setLoading] = useState(false);
+  const [leagueMode, setLeagueMode] = useState<LeagueMode>("priority");
+  const [marketPreset, setMarketPreset] = useState<MarketPreset>("result");
   const colors = statusColors(day.status);
   const isLocked = !isNextDay && day.status === "pending";
   const prevStatusRef = useRef(day.status);
@@ -169,7 +184,7 @@ function DayRow({
 
   async function handleOpen() {
     setLoading(true);
-    try { await onOpen(day.dayNumber, day.stake); } finally { setLoading(false); }
+    try { await onOpen(day.dayNumber, day.stake, leagueMode, MARKET_PRESETS[marketPreset].categories); } finally { setLoading(false); }
   }
 
   async function handleSettle(force?: "won" | "lost") {
@@ -255,15 +270,57 @@ function DayRow({
                 </div>
               )}
 
-              {/* Action buttons */}
-              <div className="flex flex-wrap gap-2 mt-1">
-                {/* Analyze */}
-                {isNextDay && (day.status === "pending" || day.status === "analyzing") && (
+              {/* Selectors + Analyze — only on next pending day */}
+              {isNextDay && (day.status === "pending" || day.status === "analyzing") && (
+                <div className="mt-1 flex flex-col gap-2.5 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                  {/* League selector */}
+                  <div>
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">Ligas</p>
+                    <div className="flex gap-1.5">
+                      {(["priority", "all"] as LeagueMode[]).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          disabled={day.status === "analyzing"}
+                          onClick={() => setLeagueMode(mode)}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed"
+                          style={leagueMode === mode
+                            ? { background: "rgba(34,211,238,0.14)", border: "1px solid rgba(34,211,238,0.35)", color: "#22d3ee" }
+                            : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", color: "#64748b" }}
+                        >
+                          {mode === "priority" ? "Prioritárias" : "Todas"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Market selector */}
+                  <div>
+                    <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">Mercado</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(Object.keys(MARKET_PRESETS) as MarketPreset[]).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          disabled={day.status === "analyzing"}
+                          onClick={() => setMarketPreset(preset)}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed"
+                          style={marketPreset === preset
+                            ? { background: "rgba(99,102,241,0.18)", border: "1px solid rgba(99,102,241,0.40)", color: "#a5b4fc" }
+                            : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", color: "#64748b" }}
+                        >
+                          {MARKET_PRESETS[preset].label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Analyze button */}
                   <button
                     type="button"
                     onClick={handleOpen}
                     disabled={loading || day.status === "analyzing"}
-                    className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity disabled:opacity-60"
+                    className="inline-flex items-center gap-2 self-start rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity disabled:opacity-60"
                     style={{ background: "linear-gradient(135deg, rgba(34,211,238,0.14) 0%, rgba(99,102,241,0.14) 100%)", border: "1px solid rgba(34,211,238,0.32)", color: "#22d3ee" }}
                   >
                     {loading || day.status === "analyzing"
@@ -271,7 +328,11 @@ function DayRow({
                       : <Sparkles className="h-4 w-4" />}
                     {loading ? "Iniciando..." : day.status === "analyzing" ? "IA analisando..." : `Analisar dia ${day.dayNumber}`}
                   </button>
-                )}
+                </div>
+              )}
+
+              {/* Other action buttons */}
+              <div className="flex flex-wrap gap-2 mt-1">
 
                 {/* Settle buttons */}
                 {day.status === "open" && (
@@ -388,12 +449,12 @@ export function ProgressionShell({ initialActive, initialHistory }: Props) {
   }
 
   // ── Open a day (trigger analysis) ────────────────────────────────────────
-  async function handleOpen(dayNumber: number, stake: number) {
+  async function handleOpen(dayNumber: number, stake: number, leagueMode: LeagueMode, marketCategories: string[]) {
     if (!active) return;
     const res = await fetch("/api/progression/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: active.id, dayNumber, stake }),
+      body: JSON.stringify({ sessionId: active.id, dayNumber, stake, leagueMode, marketCategories }),
     });
     const data = (await res.json()) as { error?: string };
     if (!res.ok) throw new Error(data.error ?? "Erro ao analisar.");

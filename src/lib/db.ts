@@ -1733,7 +1733,7 @@ export async function getActiveProgressionSession(username: string): Promise<Pro
   if (!sessionResult.rows.length) return null;
   const session = mapProgressionSessionRow(sessionResult.rows[0] as Record<string, unknown>);
   const daysResult = await db.execute({
-    sql: `SELECT * FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? ORDER BY day_number ASC`,
+    sql: `SELECT d.* FROM ${PROGRESSION_DAYS_TABLE} d INNER JOIN (SELECT day_number, MAX(rowid) AS max_rowid FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? GROUP BY day_number) latest ON d.rowid = latest.max_rowid ORDER BY d.day_number ASC`,
     args: [session.id],
   });
   return { ...session, days: daysResult.rows.map((r) => mapProgressionDayRow(r as Record<string, unknown>)) };
@@ -1749,7 +1749,7 @@ export async function getAllProgressionSessions(username: string): Promise<Progr
     sessionResult.rows.map(async (r) => {
       const session = mapProgressionSessionRow(r as Record<string, unknown>);
       const daysResult = await db.execute({
-        sql: `SELECT * FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? ORDER BY day_number ASC`,
+        sql: `SELECT d.* FROM ${PROGRESSION_DAYS_TABLE} d INNER JOIN (SELECT day_number, MAX(rowid) AS max_rowid FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? GROUP BY day_number) latest ON d.rowid = latest.max_rowid ORDER BY d.day_number ASC`,
         args: [session.id],
       });
       return { ...session, days: daysResult.rows.map((d) => mapProgressionDayRow(d as Record<string, unknown>)) };
@@ -1870,6 +1870,46 @@ export async function deleteProgressionSession(sessionId: string, username: stri
     sql: `DELETE FROM ${PROGRESSION_SESSIONS_TABLE} WHERE id = ? AND username = ?`,
     args: [sessionId, username],
   });
+}
+
+/**
+ * Returns picks from recent analysis runs (last 48h) that fall within the given odd range.
+ * Used as a fast path in the progression analyze route to avoid re-running the full engine.
+ */
+export async function getRecentPicksInRange(
+  username: string,
+  minOdd: number,
+  maxOdd: number,
+  leagueIds?: number[],
+  marketCategories?: string[],
+): Promise<AnalysisPick[]> {
+  await ensureSchema();
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+  // Build dynamic WHERE clause
+  let sql = `
+    SELECT p.* FROM ${PICKS_TABLE} p
+    INNER JOIN ${RUNS_TABLE} r ON p.run_id = r.id
+    WHERE (p.username = ? OR p.username = '')
+      AND p.best_odd >= ? AND p.best_odd <= ?
+      AND p.fixture_date > ?
+      AND r.created_at > ?
+  `;
+  const args: (string | number)[] = [username, minOdd, maxOdd, new Date().toISOString(), cutoff];
+
+  if (leagueIds && leagueIds.length > 0) {
+    sql += ` AND p.league_id IN (${leagueIds.map(() => "?").join(",")})`;
+    args.push(...leagueIds);
+  }
+  if (marketCategories && marketCategories.length > 0) {
+    sql += ` AND p.market_category IN (${marketCategories.map(() => "?").join(",")})`;
+    args.push(...marketCategories);
+  }
+
+  sql += ` ORDER BY r.created_at DESC, p.best_odd ASC LIMIT 20`;
+
+  const result = await db.execute({ sql, args });
+  return result.rows.map((r) => mapPickRow(r as Record<string, unknown>));
 }
 
 export async function clearProgressionHistory(username: string): Promise<void> {
