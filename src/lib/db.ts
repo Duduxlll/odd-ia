@@ -15,6 +15,10 @@ import type {
   PerformanceSummary,
   PrefetchStatus,
   PickTrackingSnapshot,
+  ProgressionDay,
+  ProgressionDayStatus,
+  ProgressionSession,
+  ProgressionSessionStatus,
   RefereeStatsSnapshot,
   WorkerStatus,
   XgContextSnapshot,
@@ -34,6 +38,8 @@ const STATE_TABLE = "radar_dashboard_state";
 const JOBS_TABLE = "radar_analysis_jobs";
 const PREFETCH_TABLE = "radar_prefetch_cache";
 const CALIBRATION_TABLE = "radar_calibration_profiles";
+const PROGRESSION_SESSIONS_TABLE = "progression_sessions";
+const PROGRESSION_DAYS_TABLE = "progression_days";
 const VERCEL_ANALYSIS_STALE_MS = 15 * 60 * 1000;
 const LOCAL_ANALYSIS_STALE_MS = 30 * 60 * 1000;
 
@@ -79,6 +85,36 @@ async function ensureColumnExists(tableName: string, columnName: string, sqlType
       `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${sqlType} NOT NULL DEFAULT '${defaultValue}'`,
     );
   }
+}
+
+function mapProgressionSessionRow(row: Record<string, unknown>): Omit<ProgressionSession, "days"> {
+  return {
+    id: String(row.id),
+    username: String(row.username),
+    status: String(row.status) as ProgressionSessionStatus,
+    startAmount: numberValue(row.start_amount),
+    currentDay: numberValue(row.current_day),
+    startedAt: String(row.started_at),
+    endedAt: row.ended_at ? String(row.ended_at) : null,
+  };
+}
+
+function mapProgressionDayRow(row: Record<string, unknown>): ProgressionDay {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    dayNumber: numberValue(row.day_number),
+    stake: numberValue(row.stake),
+    oddMin: numberValue(row.odd_min, 1.50),
+    oddMax: numberValue(row.odd_max, 1.60),
+    actualOdd: nullableNumberValue(row.actual_odd),
+    returnAmount: nullableNumberValue(row.return_amount),
+    fixtureId: row.fixture_id ? numberValue(row.fixture_id) : null,
+    pick: parseJson<AnalysisPick | null>(row.pick_json, null),
+    status: String(row.status) as ProgressionDayStatus,
+    openedAt: row.opened_at ? String(row.opened_at) : null,
+    settledAt: row.settled_at ? String(row.settled_at) : null,
+  };
 }
 
 function mapPickRow(row: Record<string, unknown>): AnalysisPick {
@@ -422,6 +458,38 @@ export async function ensureSchema() {
         '{"status":"open","settledAt":null,"resultLabel":null,"profitUnits":null}',
       );
       await ensureColumnExists(PICKS_TABLE, "referee_stats_json", "TEXT", "null");
+
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ${PROGRESSION_SESSIONS_TABLE} (
+          id TEXT PRIMARY KEY,
+          username TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          start_amount REAL NOT NULL,
+          current_day INTEGER NOT NULL DEFAULT 0,
+          started_at TEXT NOT NULL,
+          ended_at TEXT
+        )
+      `);
+
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ${PROGRESSION_DAYS_TABLE} (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          username TEXT NOT NULL,
+          day_number INTEGER NOT NULL,
+          stake REAL NOT NULL,
+          odd_min REAL NOT NULL DEFAULT 1.50,
+          odd_max REAL NOT NULL DEFAULT 1.60,
+          actual_odd REAL,
+          return_amount REAL,
+          fixture_id INTEGER,
+          pick_json TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          opened_at TEXT,
+          settled_at TEXT,
+          FOREIGN KEY (session_id) REFERENCES ${PROGRESSION_SESSIONS_TABLE}(id)
+        )
+      `);
     })();
   }
 
@@ -1638,6 +1706,151 @@ export async function listKnownAnalysisUsers() {
   return result.rows
     .map((row) => String((row as Record<string, unknown>).username))
     .filter(Boolean);
+}
+
+// ─── Progression ─────────────────────────────────────────────────────────────
+
+export async function createProgressionSession(
+  username: string,
+  startAmount: number,
+): Promise<ProgressionSession> {
+  await ensureSchema();
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `INSERT INTO ${PROGRESSION_SESSIONS_TABLE} (id, username, status, start_amount, current_day, started_at) VALUES (?, ?, 'active', ?, 0, ?)`,
+    args: [id, username, startAmount, now],
+  });
+  return { id, username, status: "active", startAmount, currentDay: 0, startedAt: now, endedAt: null, days: [] };
+}
+
+export async function getActiveProgressionSession(username: string): Promise<ProgressionSession | null> {
+  await ensureSchema();
+  const sessionResult = await db.execute({
+    sql: `SELECT * FROM ${PROGRESSION_SESSIONS_TABLE} WHERE username = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`,
+    args: [username],
+  });
+  if (!sessionResult.rows.length) return null;
+  const session = mapProgressionSessionRow(sessionResult.rows[0] as Record<string, unknown>);
+  const daysResult = await db.execute({
+    sql: `SELECT * FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? ORDER BY day_number ASC`,
+    args: [session.id],
+  });
+  return { ...session, days: daysResult.rows.map((r) => mapProgressionDayRow(r as Record<string, unknown>)) };
+}
+
+export async function getAllProgressionSessions(username: string): Promise<ProgressionSession[]> {
+  await ensureSchema();
+  const sessionResult = await db.execute({
+    sql: `SELECT * FROM ${PROGRESSION_SESSIONS_TABLE} WHERE username = ? ORDER BY started_at DESC LIMIT 20`,
+    args: [username],
+  });
+  const sessions = await Promise.all(
+    sessionResult.rows.map(async (r) => {
+      const session = mapProgressionSessionRow(r as Record<string, unknown>);
+      const daysResult = await db.execute({
+        sql: `SELECT * FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? ORDER BY day_number ASC`,
+        args: [session.id],
+      });
+      return { ...session, days: daysResult.rows.map((d) => mapProgressionDayRow(d as Record<string, unknown>)) };
+    }),
+  );
+  return sessions;
+}
+
+export async function setProgressionDayAnalyzing(
+  sessionId: string,
+  username: string,
+  dayNumber: number,
+  stake: number,
+): Promise<ProgressionDay> {
+  await ensureSchema();
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `
+      INSERT INTO ${PROGRESSION_DAYS_TABLE} (id, session_id, username, day_number, stake, status, opened_at)
+      VALUES (?, ?, ?, ?, ?, 'analyzing', ?)
+      ON CONFLICT DO NOTHING
+    `,
+    args: [id, sessionId, username, dayNumber, stake, now],
+  });
+  await db.execute({
+    sql: `UPDATE ${PROGRESSION_SESSIONS_TABLE} SET current_day = ? WHERE id = ? AND current_day < ?`,
+    args: [dayNumber, sessionId, dayNumber],
+  });
+  const result = await db.execute({
+    sql: `SELECT * FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? AND day_number = ?`,
+    args: [sessionId, dayNumber],
+  });
+  return mapProgressionDayRow(result.rows[0] as Record<string, unknown>);
+}
+
+export async function openProgressionDay(
+  sessionId: string,
+  dayNumber: number,
+  pick: AnalysisPick,
+  actualOdd: number,
+  fixtureId: number,
+): Promise<void> {
+  await ensureSchema();
+  const stakeResult = await db.execute({
+    sql: `SELECT stake FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? AND day_number = ?`,
+    args: [sessionId, dayNumber],
+  });
+  const stake = numberValue((stakeResult.rows[0] as Record<string, unknown>)?.stake);
+  const returnAmount = Number((actualOdd * stake).toFixed(2));
+  await db.execute({
+    sql: `
+      UPDATE ${PROGRESSION_DAYS_TABLE}
+      SET status = 'open', pick_json = ?, actual_odd = ?, return_amount = ?, fixture_id = ?
+      WHERE session_id = ? AND day_number = ?
+    `,
+    args: [JSON.stringify(pick), actualOdd, returnAmount, fixtureId, sessionId, dayNumber],
+  });
+}
+
+export async function settleProgressionDay(
+  sessionId: string,
+  username: string,
+  dayNumber: number,
+  result: "won" | "lost",
+): Promise<void> {
+  await ensureSchema();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `UPDATE ${PROGRESSION_DAYS_TABLE} SET status = ?, settled_at = ? WHERE session_id = ? AND day_number = ?`,
+    args: [result, now, sessionId, dayNumber],
+  });
+  if (result === "lost") {
+    await db.execute({
+      sql: `UPDATE ${PROGRESSION_SESSIONS_TABLE} SET status = 'lost', ended_at = ? WHERE id = ? AND username = ?`,
+      args: [now, sessionId, username],
+    });
+  }
+}
+
+export async function failProgressionDayAnalysis(sessionId: string, dayNumber: number): Promise<void> {
+  await ensureSchema();
+  await db.execute({
+    sql: `UPDATE ${PROGRESSION_DAYS_TABLE} SET status = 'pending', opened_at = NULL WHERE session_id = ? AND day_number = ? AND status = 'analyzing'`,
+    args: [sessionId, dayNumber],
+  });
+}
+
+export async function resetProgressionSession(sessionId: string, username: string): Promise<ProgressionSession> {
+  await ensureSchema();
+  const now = new Date().toISOString();
+  await db.execute({
+    sql: `UPDATE ${PROGRESSION_SESSIONS_TABLE} SET status = 'lost', ended_at = ? WHERE id = ? AND username = ?`,
+    args: [now, sessionId, username],
+  });
+  const existing = await db.execute({
+    sql: `SELECT start_amount FROM ${PROGRESSION_SESSIONS_TABLE} WHERE id = ?`,
+    args: [sessionId],
+  });
+  const startAmount = numberValue((existing.rows[0] as Record<string, unknown>)?.start_amount, 10);
+  return createProgressionSession(username, startAmount);
 }
 
 export async function clearAnalysisHistory(username: string) {

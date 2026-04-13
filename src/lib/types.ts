@@ -214,6 +214,36 @@ export interface AnalysisPick {
   aiConfidenceLabel: "elite" | "high" | "medium" | "guarded";
 }
 
+export type ProgressionDayStatus = "pending" | "analyzing" | "open" | "won" | "lost";
+export type ProgressionSessionStatus = "active" | "won" | "lost";
+
+export interface ProgressionDay {
+  id: string;
+  sessionId: string;
+  dayNumber: number;
+  stake: number;
+  oddMin: number;
+  oddMax: number;
+  actualOdd: number | null;
+  returnAmount: number | null;
+  fixtureId: number | null;
+  pick: AnalysisPick | null;
+  status: ProgressionDayStatus;
+  openedAt: string | null;
+  settledAt: string | null;
+}
+
+export interface ProgressionSession {
+  id: string;
+  username: string;
+  status: ProgressionSessionStatus;
+  startAmount: number;
+  currentDay: number;
+  startedAt: string;
+  endedAt: string | null;
+  days: ProgressionDay[];
+}
+
 export interface AccumulatorSuggestion {
   targetOdd: number;
   combinedOdd: number;

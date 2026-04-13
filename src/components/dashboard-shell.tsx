@@ -11,6 +11,7 @@ import {
   LogOut,
   ShieldAlert,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -366,6 +367,16 @@ export function DashboardShell({
               Logado como <span className="font-medium text-slate-200">{currentUsername}</span>
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => router.push("/progression")}
+            className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors hover:text-white"
+            style={{ backgroundColor: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.22)", color: "#22d3ee" }}
+          >
+            <TrendingUp className="h-4 w-4" />
+            Progressão
+          </button>
 
           <button
             type="button"

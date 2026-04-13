@@ -20,6 +20,7 @@ let bookmakersDirectoryCache:
     }
   | null = null;
 import type {
+  AnalysisPick,
   SupportedBookmaker,
   ApiFootballFixture,
   ApiFootballFixtureStatistics,
@@ -480,4 +481,115 @@ export async function fetchAvailableBookmakers() {
   };
 
   return bookmakers;
+}
+
+type FixtureLiveResponse = {
+  fixture: { status: { short: string } };
+  goals: { home: number | null; away: number | null };
+  score: {
+    halftime: { home: number | null; away: number | null };
+    fulltime: { home: number | null; away: number | null };
+  };
+  statistics?: Array<{
+    team: { id: number };
+    statistics: Array<{ type: string; value: number | string | null }>;
+  }>;
+};
+
+const FINISHED_STATUSES = new Set(["FT", "AET", "PEN", "AWD", "WO"]);
+
+function getStatValue(
+  stats: FixtureLiveResponse["statistics"],
+  teamId: number,
+  typeName: string,
+): number {
+  if (!stats) return 0;
+  const teamStats = stats.find((s) => s.team.id === teamId);
+  if (!teamStats) return 0;
+  const entry = teamStats.statistics.find((s) => s.type.toLowerCase() === typeName.toLowerCase());
+  return typeof entry?.value === "number" ? entry.value : parseInt(String(entry?.value ?? "0"), 10) || 0;
+}
+
+export async function fetchFixtureResult(
+  fixtureId: number,
+  pick: AnalysisPick,
+): Promise<"won" | "lost" | null> {
+  try {
+    const payload = await apiFootballFetch<FixtureLiveResponse[]>("/fixtures", {
+      id: fixtureId,
+    });
+
+    const fixture = payload.response[0];
+    if (!fixture) return null;
+
+    const statusShort = fixture.fixture.status.short;
+    if (!FINISHED_STATUSES.has(statusShort)) return null;
+
+    const homeGoals = fixture.goals.home ?? 0;
+    const awayGoals = fixture.goals.away ?? 0;
+    const totalGoals = homeGoals + awayGoals;
+    const sel = pick.selection.toLowerCase();
+    const cat = pick.marketCategory;
+
+    // Result markets
+    if (cat === "result" || cat === "handicaps") {
+      if (sel.includes("home") || sel === "1") return homeGoals > awayGoals ? "won" : "lost";
+      if (sel.includes("away") || sel === "2") return awayGoals > homeGoals ? "won" : "lost";
+      if (sel.includes("draw") || sel === "x") return homeGoals === awayGoals ? "won" : "lost";
+      if (sel.includes("double chance")) {
+        if (sel.includes("1x")) return homeGoals >= awayGoals ? "won" : "lost";
+        if (sel.includes("x2")) return awayGoals >= homeGoals ? "won" : "lost";
+        if (sel.includes("12")) return homeGoals !== awayGoals ? "won" : "lost";
+      }
+    }
+
+    // Goals markets
+    if (cat === "goals" || cat === "halves" || cat === "team_totals") {
+      const lineMatch = pick.selection.match(/([0-9]+\.?[0-9]*)/);
+      const line = lineMatch ? parseFloat(lineMatch[1]) : null;
+      if (line !== null) {
+        if (sel.includes("over")) return totalGoals > line ? "won" : "lost";
+        if (sel.includes("under")) return totalGoals < line ? "won" : "lost";
+      }
+      if (sel.includes("btts") || sel.includes("both teams to score")) {
+        return homeGoals > 0 && awayGoals > 0 ? "won" : "lost";
+      }
+    }
+
+    // Corners / Cards / Shots — need statistics
+    if ((cat === "corners" || cat === "cards" || cat === "shots") && fixture.statistics) {
+      const lineMatch = pick.selection.match(/([0-9]+\.?[0-9]*)/);
+      const line = lineMatch ? parseFloat(lineMatch[1]) : null;
+      if (line !== null) {
+        let total = 0;
+        if (cat === "corners") {
+          total =
+            getStatValue(fixture.statistics, 0, "corner kicks") ||
+            fixture.statistics.reduce(
+              (sum, t) => sum + getStatValue([t], t.team.id, "corner kicks"),
+              0,
+            );
+        } else if (cat === "cards") {
+          total = fixture.statistics.reduce(
+            (sum, t) =>
+              sum +
+              getStatValue([t], t.team.id, "yellow cards") +
+              getStatValue([t], t.team.id, "red cards"),
+            0,
+          );
+        } else if (cat === "shots") {
+          total = fixture.statistics.reduce(
+            (sum, t) => sum + getStatValue([t], t.team.id, "total shots"),
+            0,
+          );
+        }
+        if (sel.includes("over")) return total > line ? "won" : "lost";
+        if (sel.includes("under")) return total < line ? "won" : "lost";
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
