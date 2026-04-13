@@ -10,6 +10,7 @@ import {
   History,
   Loader2,
   RotateCcw,
+  Search,
   Sparkles,
   Trash2,
   TrendingUp,
@@ -17,8 +18,9 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { MARKET_RULES, TOP_FOOTBALL_LEAGUES } from "@/lib/constants";
+import { MARKET_RULES } from "@/lib/constants";
 import type { ProgressionDay, ProgressionSession } from "@/lib/types";
+import type { FixtureLeagueEntry } from "@/app/api/progression/fixtures/route";
 
 type Props = {
   initialActive: ProgressionSession | null;
@@ -144,8 +146,6 @@ function StartScreen({ onStart }: { onStart: (amount: number) => Promise<void> }
 // Priority leagues — PL, La Liga, Serie A, Bundesliga, Brasileirão
 const DEFAULT_LEAGUE_IDS = [39, 140, 135, 78, 71];
 
-type LeagueCountEntry = { id: number; name: string; country: string; count: number };
-
 // ─── Day Row ───────────────────────────────────────────────────────────────
 
 function DayRow({
@@ -163,7 +163,9 @@ function DayRow({
   const [loading, setLoading] = useState(false);
   const [selectedLeagueIds, setSelectedLeagueIds] = useState<number[]>(DEFAULT_LEAGUE_IDS);
   const [selectedMarketIds, setSelectedMarketIds] = useState<string[]>(["result", "goals"]);
-  const [leagueEntries, setLeagueEntries] = useState<LeagueCountEntry[]>([]);
+  const [leagueEntries, setLeagueEntries] = useState<FixtureLeagueEntry[]>([]);
+  const [loadingLeagues, setLoadingLeagues] = useState(false);
+  const [leagueQuery, setLeagueQuery] = useState("");
   const leaguesLoadedRef = useRef(false);
 
   const colors = statusColors(day.status);
@@ -178,16 +180,23 @@ function DayRow({
     prevStatusRef.current = day.status;
   }, [day.status]);
 
-  // Load league fixture counts once when this day's selector panel is visible
+  // Load ALL league fixture counts once when this day's selector panel is visible
   useEffect(() => {
     if (!isNextDay || day.status !== "pending" || !expanded || leaguesLoadedRef.current) return;
     leaguesLoadedRef.current = true;
+    setLoadingLeagues(true);
     fetch("/api/progression/fixtures", { cache: "no-store" })
       .then((r) => r.json())
-      .then((data: { leagues?: LeagueCountEntry[] }) => {
-        if (data.leagues) setLeagueEntries(data.leagues);
+      .then((data: { leagues?: FixtureLeagueEntry[] }) => {
+        if (data.leagues?.length) {
+          setLeagueEntries(data.leagues);
+          // Keep default selection if those leagues are present; otherwise select all
+          const ids = data.leagues.map((l) => l.id);
+          setSelectedLeagueIds((prev) => prev.filter((id) => ids.includes(id)));
+        }
       })
-      .catch(() => null);
+      .catch(() => null)
+      .finally(() => setLoadingLeagues(false));
   }, [isNextDay, day.status, expanded]);
 
   async function handleOpen() {
@@ -285,48 +294,88 @@ function DayRow({
                   {/* League selector */}
                   <div>
                     <div className="mb-1.5 flex items-center justify-between">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Ligas</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                        Ligas {selectedLeagueIds.length > 0 && <span className="text-cyan-500">({selectedLeagueIds.length})</span>}
+                      </p>
                       <div className="flex gap-3">
                         <button type="button" disabled={day.status === "analyzing"}
-                          onClick={() => setSelectedLeagueIds(TOP_FOOTBALL_LEAGUES.map((l) => l.id))}
+                          onClick={() => setSelectedLeagueIds(leagueEntries.map((l) => l.id))}
                           className="text-[10px] text-slate-600 transition-colors hover:text-cyan-400 disabled:cursor-not-allowed">
                           Todas
                         </button>
                         <button type="button" disabled={day.status === "analyzing"}
-                          onClick={() => setSelectedLeagueIds(DEFAULT_LEAGUE_IDS)}
+                          onClick={() => setSelectedLeagueIds(DEFAULT_LEAGUE_IDS.filter((id) => leagueEntries.some((l) => l.id === id)))}
                           className="text-[10px] text-slate-600 transition-colors hover:text-cyan-400 disabled:cursor-not-allowed">
                           Prioritárias
                         </button>
+                        <button type="button" disabled={day.status === "analyzing"}
+                          onClick={() => setSelectedLeagueIds([])}
+                          className="text-[10px] text-slate-600 transition-colors hover:text-rose-400 disabled:cursor-not-allowed">
+                          Limpar
+                        </button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {(leagueEntries.length > 0 ? leagueEntries : TOP_FOOTBALL_LEAGUES.map((l) => ({ ...l, count: undefined as number | undefined }))).map((league) => {
-                        const isSelected = selectedLeagueIds.includes(league.id);
-                        return (
-                          <button
-                            key={league.id}
-                            type="button"
-                            disabled={day.status === "analyzing"}
-                            onClick={() => setSelectedLeagueIds((prev) =>
-                              prev.includes(league.id) ? prev.filter((id) => id !== league.id) : [...prev, league.id]
-                            )}
-                            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all disabled:cursor-not-allowed"
-                            style={isSelected
-                              ? { background: "rgba(34,211,238,0.12)", border: "1px solid rgba(34,211,238,0.35)", color: "#22d3ee" }
-                              : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.09)", color: "#475569" }}
-                          >
-                            <span>{league.name}</span>
-                            {"count" in league && typeof league.count === "number" && (
-                              <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold"
-                                style={isSelected
-                                  ? { background: "rgba(34,211,238,0.20)", color: "#22d3ee" }
-                                  : { background: "rgba(255,255,255,0.06)", color: "#64748b" }}>
-                                {league.count}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
+
+                    {/* Search */}
+                    <div className="relative mb-2">
+                      <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-600" />
+                      <input
+                        type="text"
+                        value={leagueQuery}
+                        onChange={(e) => setLeagueQuery(e.target.value)}
+                        placeholder="Buscar liga ou país..."
+                        disabled={day.status === "analyzing"}
+                        className="w-full rounded-lg py-1.5 pl-7 pr-3 text-xs text-white placeholder:text-slate-600 outline-none disabled:cursor-not-allowed"
+                        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)" }}
+                      />
+                    </div>
+
+                    {/* Scrollable league list */}
+                    <div className="overflow-y-auto rounded-lg" style={{ maxHeight: "180px", background: "rgba(0,0,0,0.15)" }}>
+                      {loadingLeagues && leagueEntries.length === 0 ? (
+                        <div className="flex items-center justify-center py-4 gap-2 text-[11px] text-slate-600">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Carregando ligas...
+                        </div>
+                      ) : (
+                        leagueEntries
+                          .filter((l) => {
+                            if (!leagueQuery.trim()) return true;
+                            const q = leagueQuery.toLowerCase();
+                            return l.name.toLowerCase().includes(q) || l.country.toLowerCase().includes(q);
+                          })
+                          .map((league) => {
+                            const isSelected = selectedLeagueIds.includes(league.id);
+                            return (
+                              <button
+                                key={league.id}
+                                type="button"
+                                disabled={day.status === "analyzing"}
+                                onClick={() => setSelectedLeagueIds((prev) =>
+                                  prev.includes(league.id) ? prev.filter((id) => id !== league.id) : [...prev, league.id]
+                                )}
+                                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors disabled:cursor-not-allowed hover:bg-white/5"
+                                style={isSelected ? { background: "rgba(34,211,238,0.08)" } : {}}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="h-2 w-2 shrink-0 rounded-full"
+                                    style={{ background: isSelected ? "#22d3ee" : "rgba(255,255,255,0.12)" }} />
+                                  <span className="truncate font-medium" style={{ color: isSelected ? "#e2e8f0" : "#64748b" }}>
+                                    {league.name}
+                                  </span>
+                                  <span className="text-[10px] shrink-0" style={{ color: "#334155" }}>
+                                    {league.country}
+                                  </span>
+                                </div>
+                                <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold"
+                                  style={isSelected
+                                    ? { background: "rgba(34,211,238,0.18)", color: "#22d3ee" }
+                                    : { background: "rgba(255,255,255,0.06)", color: "#475569" }}>
+                                  {league.count}
+                                </span>
+                              </button>
+                            );
+                          })
+                      )}
                     </div>
                   </div>
 

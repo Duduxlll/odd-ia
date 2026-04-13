@@ -2,11 +2,17 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
-import { TOP_FOOTBALL_LEAGUES } from "@/lib/constants";
 import { getCachedFixturesByDate } from "@/lib/prefetch";
 import { getTodayDateInSaoPaulo, getTomorrowDateInSaoPaulo } from "@/lib/utils";
 
 export const runtime = "nodejs";
+
+export type FixtureLeagueEntry = {
+  id: number;
+  name: string;
+  country: string;
+  count: number;
+};
 
 export async function GET() {
   if (!isAuthConfigured()) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
@@ -23,24 +29,26 @@ export async function GET() {
     getCachedFixturesByDate(tomorrow).catch(() => []),
   ]);
 
-  // Count upcoming fixtures per league (next ~48h)
-  const allFixtures = [...fixturesToday, ...fixturesTomorrow];
-  const leagueCounts: Record<number, number> = {};
+  // Build league map from ALL cached fixtures in the next ~48h
+  const leagueMap = new Map<number, FixtureLeagueEntry>();
 
-  for (const fixture of allFixtures) {
+  for (const fixture of [...fixturesToday, ...fixturesTomorrow]) {
     const kickoff = new Date(fixture.fixture.date).getTime();
     if (!Number.isFinite(kickoff) || kickoff <= nowMs) continue;
-    const id = fixture.league.id;
-    leagueCounts[id] = (leagueCounts[id] ?? 0) + 1;
+
+    const { id, name, country } = fixture.league;
+    const entry = leagueMap.get(id);
+    if (entry) {
+      entry.count++;
+    } else {
+      leagueMap.set(id, { id, name: name || `Liga ${id}`, country: country || "", count: 1 });
+    }
   }
 
-  // Return only the leagues we support, enriched with counts
-  const leagues = TOP_FOOTBALL_LEAGUES.map((l) => ({
-    id: l.id,
-    name: l.name,
-    country: l.country,
-    count: leagueCounts[l.id] ?? 0,
-  }));
+  // Sort by game count desc, then name asc
+  const leagues = Array.from(leagueMap.values()).sort((a, b) =>
+    b.count !== a.count ? b.count - a.count : a.name.localeCompare(b.name),
+  );
 
   return NextResponse.json({ leagues });
 }

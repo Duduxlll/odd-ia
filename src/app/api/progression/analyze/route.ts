@@ -104,16 +104,18 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
-        // Fast path: check existing DB picks first (avoids full engine run when possible)
-        let bestPick = await findPickFast(username, leagueIds, marketCategories);
+        // Always run the full engine first for maximum quality / depth.
+        // Fast path (existing DB picks) is only used as a last resort if the engine
+        // finds nothing after two horizon sweeps.
+        let bestPick = await findBestPickFull(username, leagueIds, marketCategories);
 
         if (!bestPick) {
-          // Full engine run (isolated — not saved to dashboard)
-          bestPick = await findBestPickFull(username, leagueIds, marketCategories);
+          // Fallback: reuse a recent pick from DB if available
+          bestPick = await findPickFast(username, leagueIds, marketCategories);
         }
 
         if (!bestPick) {
-          // No pick found — reset to pending so user can try again
+          // No pick found in either path — reset to pending so user can try again
           await failProgressionDayAnalysis(sessionId, dayNumber);
           return;
         }
