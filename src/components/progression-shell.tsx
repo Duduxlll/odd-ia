@@ -467,7 +467,7 @@ export function ProgressionShell({ initialActive, initialHistory }: Props) {
 
   useEffect(() => {
     if (needsPoll) {
-      pollRef.current = setInterval(refresh, 5000);
+      pollRef.current = setInterval(refresh, 10000);
     } else {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     }

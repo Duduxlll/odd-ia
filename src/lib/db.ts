@@ -1733,10 +1733,20 @@ export async function getActiveProgressionSession(username: string): Promise<Pro
   if (!sessionResult.rows.length) return null;
   const session = mapProgressionSessionRow(sessionResult.rows[0] as Record<string, unknown>);
   const daysResult = await db.execute({
-    sql: `SELECT d.* FROM ${PROGRESSION_DAYS_TABLE} d INNER JOIN (SELECT day_number, MAX(rowid) AS max_rowid FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? GROUP BY day_number) latest ON d.rowid = latest.max_rowid ORDER BY d.day_number ASC`,
+    sql: `SELECT * FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? ORDER BY day_number ASC, rowid DESC LIMIT 100`,
     args: [session.id],
   });
-  return { ...session, days: daysResult.rows.map((r) => mapProgressionDayRow(r as Record<string, unknown>)) };
+  return { ...session, days: deduplicateDays(daysResult.rows.map((r) => mapProgressionDayRow(r as Record<string, unknown>))) };
+}
+
+/** Keep only the most-recent row per day_number (rows arrive newest-first within each day). */
+function deduplicateDays(days: ProgressionDay[]): ProgressionDay[] {
+  const seen = new Set<number>();
+  return days.filter((d) => {
+    if (seen.has(d.dayNumber)) return false;
+    seen.add(d.dayNumber);
+    return true;
+  });
 }
 
 export async function getAllProgressionSessions(username: string): Promise<ProgressionSession[]> {
@@ -1749,10 +1759,10 @@ export async function getAllProgressionSessions(username: string): Promise<Progr
     sessionResult.rows.map(async (r) => {
       const session = mapProgressionSessionRow(r as Record<string, unknown>);
       const daysResult = await db.execute({
-        sql: `SELECT d.* FROM ${PROGRESSION_DAYS_TABLE} d INNER JOIN (SELECT day_number, MAX(rowid) AS max_rowid FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? GROUP BY day_number) latest ON d.rowid = latest.max_rowid ORDER BY d.day_number ASC`,
+        sql: `SELECT * FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? ORDER BY day_number ASC, rowid DESC LIMIT 100`,
         args: [session.id],
       });
-      return { ...session, days: daysResult.rows.map((d) => mapProgressionDayRow(d as Record<string, unknown>)) };
+      return { ...session, days: deduplicateDays(daysResult.rows.map((d) => mapProgressionDayRow(d as Record<string, unknown>))) };
     }),
   );
   return sessions;
@@ -1875,6 +1885,7 @@ export async function deleteProgressionSession(sessionId: string, username: stri
 /**
  * Returns picks from recent analysis runs (last 48h) that fall within the given odd range.
  * Used as a fast path in the progression analyze route to avoid re-running the full engine.
+ * Query is intentionally simple (no JOIN) to avoid memory pressure on Turso.
  */
 export async function getRecentPicksInRange(
   username: string,
@@ -1885,28 +1896,28 @@ export async function getRecentPicksInRange(
 ): Promise<AnalysisPick[]> {
   await ensureSchema();
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
 
-  // Build dynamic WHERE clause
+  // No JOIN — picks table has its own created_at, so we filter directly.
   let sql = `
-    SELECT p.* FROM ${PICKS_TABLE} p
-    INNER JOIN ${RUNS_TABLE} r ON p.run_id = r.id
-    WHERE (p.username = ? OR p.username = '')
-      AND p.best_odd >= ? AND p.best_odd <= ?
-      AND p.fixture_date > ?
-      AND r.created_at > ?
+    SELECT * FROM ${PICKS_TABLE}
+    WHERE (username = ? OR username = '')
+      AND best_odd >= ? AND best_odd <= ?
+      AND fixture_date > ?
+      AND created_at > ?
   `;
-  const args: (string | number)[] = [username, minOdd, maxOdd, new Date().toISOString(), cutoff];
+  const args: (string | number)[] = [username, minOdd, maxOdd, nowIso, cutoff];
 
   if (leagueIds && leagueIds.length > 0) {
-    sql += ` AND p.league_id IN (${leagueIds.map(() => "?").join(",")})`;
+    sql += ` AND league_id IN (${leagueIds.map(() => "?").join(",")})`;
     args.push(...leagueIds);
   }
   if (marketCategories && marketCategories.length > 0) {
-    sql += ` AND p.market_category IN (${marketCategories.map(() => "?").join(",")})`;
+    sql += ` AND market_category IN (${marketCategories.map(() => "?").join(",")})`;
     args.push(...marketCategories);
   }
 
-  sql += ` ORDER BY r.created_at DESC, p.best_odd ASC LIMIT 20`;
+  sql += ` ORDER BY created_at DESC, best_odd ASC LIMIT 10`;
 
   const result = await db.execute({ sql, args });
   return result.rows.map((r) => mapPickRow(r as Record<string, unknown>));
