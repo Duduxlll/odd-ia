@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   BadgePercent,
   Copy,
@@ -368,15 +369,15 @@ export function DashboardShell({
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => router.push("/progression")}
+          <Link
+            href="/progression"
+            prefetch={true}
             className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors hover:text-white"
             style={{ backgroundColor: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.22)", color: "#22d3ee" }}
           >
             <TrendingUp className="h-4 w-4" />
             Progressão
-          </button>
+          </Link>
 
           <button
             type="button"

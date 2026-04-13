@@ -25,10 +25,49 @@ async function requireSession() {
 }
 
 const schema = z.object({
-  sessionId: z.string().uuid(),
+  sessionId: z.string(),
   dayNumber: z.number().int().min(1),
   stake: z.number().min(0.01),
 });
+
+const MARKET_CATEGORIES = ["result", "goals", "halves", "handicaps"] as const;
+const ODD_MIN = 1.50;
+const ODD_MAX = 1.60;
+const MAX_RETRIES = 4;
+
+// Try progressively wider scan windows to find a pick in the target odds range
+async function findBestPickWithRetry(username: string) {
+  const horizons = [24, 36, 48, 72];
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const horizonHours = horizons[attempt] ?? 72;
+    const result = await runFootballAnalysis(
+      {
+        ...DEFAULT_FILTERS,
+        scanDate: getTodayDateInSaoPaulo(),
+        horizonHours,
+        minOdd: ODD_MIN,
+        maxOdd: ODD_MAX,
+        pickCount: 8,
+        reasoningEffort: "high",
+        useWebSearch: false,
+        leagueIds: TOP_FOOTBALL_LEAGUES.map((l) => l.id),
+        marketCategories: [...MARKET_CATEGORIES],
+      },
+      username,
+    );
+
+    const bestPick = result?.picks?.[0] ?? null;
+    if (bestPick && bestPick.bestOdd >= ODD_MIN && bestPick.bestOdd <= ODD_MAX) {
+      return bestPick;
+    }
+
+    // Short pause between retries to avoid hammering the APIs
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
+  return null;
+}
 
 export async function POST(request: Request) {
   try {
@@ -52,23 +91,8 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
-        const result = await runFootballAnalysis(
-          {
-            ...DEFAULT_FILTERS,
-            scanDate: getTodayDateInSaoPaulo(),
-            horizonHours: 36,
-            minOdd: 1.50,
-            maxOdd: 1.60,
-            pickCount: 8,
-            reasoningEffort: "high",
-            useWebSearch: false,
-            leagueIds: TOP_FOOTBALL_LEAGUES.map((l) => l.id),
-            marketCategories: ["result", "goals", "halves", "handicaps"],
-          },
-          username,
-        );
+        const bestPick = await findBestPickWithRetry(username);
 
-        const bestPick = result?.picks?.[0] ?? null;
         if (!bestPick) {
           await failProgressionDayAnalysis(sessionId, dayNumber);
           return;

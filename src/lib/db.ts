@@ -1838,19 +1838,41 @@ export async function failProgressionDayAnalysis(sessionId: string, dayNumber: n
   });
 }
 
-export async function resetProgressionSession(sessionId: string, username: string): Promise<ProgressionSession> {
+export async function endProgressionSession(sessionId: string, username: string): Promise<void> {
   await ensureSchema();
   const now = new Date().toISOString();
   await db.execute({
     sql: `UPDATE ${PROGRESSION_SESSIONS_TABLE} SET status = 'lost', ended_at = ? WHERE id = ? AND username = ?`,
     args: [now, sessionId, username],
   });
-  const existing = await db.execute({
-    sql: `SELECT start_amount FROM ${PROGRESSION_SESSIONS_TABLE} WHERE id = ?`,
-    args: [sessionId],
+}
+
+export async function deleteProgressionSession(sessionId: string, username: string): Promise<void> {
+  await ensureSchema();
+  await db.execute({
+    sql: `DELETE FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? AND username = ?`,
+    args: [sessionId, username],
   });
-  const startAmount = numberValue((existing.rows[0] as Record<string, unknown>)?.start_amount, 10);
-  return createProgressionSession(username, startAmount);
+  await db.execute({
+    sql: `DELETE FROM ${PROGRESSION_SESSIONS_TABLE} WHERE id = ? AND username = ?`,
+    args: [sessionId, username],
+  });
+}
+
+export async function clearProgressionHistory(username: string): Promise<void> {
+  await ensureSchema();
+  const closed = await db.execute({
+    sql: `SELECT id FROM ${PROGRESSION_SESSIONS_TABLE} WHERE username = ? AND status != 'active'`,
+    args: [username],
+  });
+  for (const row of closed.rows) {
+    const sid = String((row as Record<string, unknown>).id);
+    await db.execute({ sql: `DELETE FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ?`, args: [sid] });
+  }
+  await db.execute({
+    sql: `DELETE FROM ${PROGRESSION_SESSIONS_TABLE} WHERE username = ? AND status != 'active'`,
+    args: [username],
+  });
 }
 
 export async function clearAnalysisHistory(username: string) {

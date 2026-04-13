@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
-import { resetProgressionSession } from "@/lib/db";
+import { deleteProgressionSession, endProgressionSession } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -15,14 +15,22 @@ async function requireSession() {
   return session;
 }
 
-const schema = z.object({ sessionId: z.string().uuid() });
+const schema = z.object({
+  sessionId: z.string().uuid(),
+  // "end" marks as lost (keeps in history), "delete" wipes completely
+  mode: z.enum(["end", "delete"]).default("end"),
+});
 
 export async function POST(request: Request) {
   try {
     const authSession = await requireSession();
     const body = schema.parse(await request.json());
-    const newSession = await resetProgressionSession(body.sessionId, authSession.username);
-    return NextResponse.json({ session: newSession });
+    if (body.mode === "delete") {
+      await deleteProgressionSession(body.sessionId, authSession.username);
+    } else {
+      await endProgressionSession(body.sessionId, authSession.username);
+    }
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Erro." }, { status: 400 });
   }

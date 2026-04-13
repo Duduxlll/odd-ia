@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
 import {
+  clearProgressionHistory,
   createProgressionSession,
   getActiveProgressionSession,
   getAllProgressionSessions,
@@ -13,6 +14,16 @@ export const runtime = "nodejs";
 
 function authError(status: number, message: string) {
   return NextResponse.json({ error: message }, { status });
+}
+
+export async function DELETE() {
+  try {
+    const session = await requireSession();
+    await clearProgressionHistory(session.username);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return authError(401, e instanceof Error ? e.message : "Erro.");
+  }
 }
 
 async function requireSession() {
