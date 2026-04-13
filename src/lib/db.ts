@@ -1765,16 +1765,29 @@ export async function setProgressionDayAnalyzing(
   stake: number,
 ): Promise<ProgressionDay> {
   await ensureSchema();
-  const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  await db.execute({
-    sql: `
-      INSERT INTO ${PROGRESSION_DAYS_TABLE} (id, session_id, username, day_number, stake, status, opened_at)
-      VALUES (?, ?, ?, ?, ?, 'analyzing', ?)
-      ON CONFLICT DO NOTHING
-    `,
-    args: [id, sessionId, username, dayNumber, stake, now],
+
+  // Check if a row for this day already exists (can happen on retry)
+  const existing = await db.execute({
+    sql: `SELECT id FROM ${PROGRESSION_DAYS_TABLE} WHERE session_id = ? AND day_number = ?`,
+    args: [sessionId, dayNumber],
   });
+
+  if (existing.rows.length > 0) {
+    // Update existing row to analyzing (reset failed attempts)
+    await db.execute({
+      sql: `UPDATE ${PROGRESSION_DAYS_TABLE} SET status = 'analyzing', opened_at = ?, pick_json = NULL, actual_odd = NULL, return_amount = NULL, fixture_id = NULL WHERE session_id = ? AND day_number = ?`,
+      args: [now, sessionId, dayNumber],
+    });
+  } else {
+    // Insert fresh row
+    const id = crypto.randomUUID();
+    await db.execute({
+      sql: `INSERT INTO ${PROGRESSION_DAYS_TABLE} (id, session_id, username, day_number, stake, status, opened_at) VALUES (?, ?, ?, ?, ?, 'analyzing', ?)`,
+      args: [id, sessionId, username, dayNumber, stake, now],
+    });
+  }
+
   await db.execute({
     sql: `UPDATE ${PROGRESSION_SESSIONS_TABLE} SET current_day = ? WHERE id = ? AND current_day < ?`,
     args: [dayNumber, sessionId, dayNumber],

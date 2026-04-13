@@ -30,17 +30,15 @@ const schema = z.object({
   stake: z.number().min(0.01),
 });
 
-const MARKET_CATEGORIES = ["result", "goals", "halves", "handicaps"] as const;
 const ODD_MIN = 1.50;
 const ODD_MAX = 1.60;
-const MAX_RETRIES = 4;
 
-// Try progressively wider scan windows to find a pick in the target odds range
-async function findBestPickWithRetry(username: string) {
-  const horizons = [24, 36, 48, 72];
-
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const horizonHours = horizons[attempt] ?? 72;
+/**
+ * Run the engine once. On the first attempt use a 36h window to maximise
+ * coverage; if no in-range pick is found, widen to 60h.
+ */
+async function findBestPick(username: string) {
+  for (const horizonHours of [36, 60]) {
     const result = await runFootballAnalysis(
       {
         ...DEFAULT_FILTERS,
@@ -48,22 +46,21 @@ async function findBestPickWithRetry(username: string) {
         horizonHours,
         minOdd: ODD_MIN,
         maxOdd: ODD_MAX,
-        pickCount: 8,
+        pickCount: 10,
         reasoningEffort: "high",
         useWebSearch: false,
         leagueIds: TOP_FOOTBALL_LEAGUES.map((l) => l.id),
-        marketCategories: [...MARKET_CATEGORIES],
+        marketCategories: ["result", "goals", "halves", "handicaps"],
       },
       username,
     );
 
-    const bestPick = result?.picks?.[0] ?? null;
-    if (bestPick && bestPick.bestOdd >= ODD_MIN && bestPick.bestOdd <= ODD_MAX) {
-      return bestPick;
-    }
+    // Only accept picks strictly within the target range
+    const bestPick = (result?.picks ?? []).find(
+      (p) => p.bestOdd >= ODD_MIN && p.bestOdd <= ODD_MAX,
+    ) ?? null;
 
-    // Short pause between retries to avoid hammering the APIs
-    await new Promise((r) => setTimeout(r, 3000));
+    if (bestPick) return bestPick;
   }
 
   return null;
@@ -80,10 +77,11 @@ export async function POST(request: Request) {
     }
 
     const existingDay = active.days.find((d) => d.dayNumber === body.dayNumber);
-    if (existingDay && existingDay.status !== "pending") {
-      return NextResponse.json({ error: "Este dia já foi aberto." }, { status: 409 });
+    if (existingDay && (existingDay.status === "open" || existingDay.status === "won" || existingDay.status === "lost")) {
+      return NextResponse.json({ error: "Este dia já foi liquidado." }, { status: 409 });
     }
 
+    // Mark day as "analyzing" immediately (upserts if already exists from a retry)
     await setProgressionDayAnalyzing(body.sessionId, authSession.username, body.dayNumber, body.stake);
 
     const username = authSession.username;
@@ -91,9 +89,10 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
-        const bestPick = await findBestPickWithRetry(username);
+        const bestPick = await findBestPick(username);
 
         if (!bestPick) {
+          // No pick found — reset to pending so user can try again
           await failProgressionDayAnalysis(sessionId, dayNumber);
           return;
         }

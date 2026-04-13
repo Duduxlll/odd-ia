@@ -153,10 +153,19 @@ function DayRow({
   onOpen: (dayNumber: number, stake: number) => Promise<void>;
   onSettle: (dayNumber: number, force?: "won" | "lost") => Promise<void>;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(day.status === "open");
   const [loading, setLoading] = useState(false);
   const colors = statusColors(day.status);
   const isLocked = !isNextDay && day.status === "pending";
+  const prevStatusRef = useRef(day.status);
+
+  // Auto-expand when analysis finishes and pick arrives
+  useEffect(() => {
+    if (prevStatusRef.current === "analyzing" && day.status === "open") {
+      setExpanded(true);
+    }
+    prevStatusRef.current = day.status;
+  }, [day.status]);
 
   async function handleOpen() {
     setLoading(true);
@@ -249,16 +258,18 @@ function DayRow({
               {/* Action buttons */}
               <div className="flex flex-wrap gap-2 mt-1">
                 {/* Analyze */}
-                {isNextDay && day.status === "pending" && (
+                {isNextDay && (day.status === "pending" || day.status === "analyzing") && (
                   <button
                     type="button"
                     onClick={handleOpen}
-                    disabled={loading}
+                    disabled={loading || day.status === "analyzing"}
                     className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity disabled:opacity-60"
                     style={{ background: "linear-gradient(135deg, rgba(34,211,238,0.14) 0%, rgba(99,102,241,0.14) 100%)", border: "1px solid rgba(34,211,238,0.32)", color: "#22d3ee" }}
                   >
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    {loading ? "Iniciando análise..." : `Analisar dia ${day.dayNumber}`}
+                    {loading || day.status === "analyzing"
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Sparkles className="h-4 w-4" />}
+                    {loading ? "Iniciando..." : day.status === "analyzing" ? "IA analisando..." : `Analisar dia ${day.dayNumber}`}
                   </button>
                 )}
 
@@ -454,9 +465,29 @@ export function ProgressionShell({ initialActive, initialHistory }: Props) {
   const visibleDays = (() => {
     if (!active) return [];
     const days = [...active.days].sort((a, b) => a.dayNumber - b.dayNumber);
-    const lastDay = days.at(-1);
-    if (!lastDay) return [];
 
+    // Always ensure at least day 1 is visible (even before any DB row exists)
+    if (days.length === 0) {
+      days.push({
+        id: `day-1-pending`,
+        sessionId: active.id,
+        dayNumber: 1,
+        stake: active.startAmount,
+        oddMin: ODD_MIN,
+        oddMax: ODD_MAX,
+        actualOdd: null,
+        returnAmount: null,
+        fixtureId: null,
+        pick: null,
+        status: "pending",
+        openedAt: null,
+        settledAt: null,
+      });
+    }
+
+    const lastDay = days.at(-1)!;
+
+    // After a win, inject the next pending day with the accumulated stake
     if (lastDay.status === "won") {
       const nextStake = lastDay.returnAmount ?? lastDay.stake;
       days.push({
