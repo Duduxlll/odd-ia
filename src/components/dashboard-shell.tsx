@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Flame,
   Gauge,
+  Layers,
   LogOut,
   ShieldAlert,
   Sparkles,
@@ -377,6 +378,16 @@ export function DashboardShell({
           >
             <TrendingUp className="h-4 w-4" />
             Progressão
+          </Link>
+
+          <Link
+            href="/acumuladora"
+            prefetch={true}
+            className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors hover:text-white"
+            style={{ backgroundColor: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.28)", color: "#a5b4fc" }}
+          >
+            <Layers className="h-4 w-4" />
+            Múltipla
           </Link>
 
           <button
