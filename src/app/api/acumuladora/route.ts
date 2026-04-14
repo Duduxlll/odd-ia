@@ -5,7 +5,7 @@ import { z } from "zod";
 import { AUTH_COOKIE_NAME, getSessionFromToken, isAuthConfigured } from "@/lib/auth";
 import { DEFAULT_FILTERS, TOP_FOOTBALL_LEAGUES } from "@/lib/constants";
 import { runFootballAnalysis } from "@/lib/analysis/engine";
-import { getTodayDateInSaoPaulo } from "@/lib/utils";
+import { getTodayDateInSaoPaulo, getTomorrowDateInSaoPaulo } from "@/lib/utils";
 import type { AccumulatorSuggestion, AnalysisPick } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -16,22 +16,33 @@ const BET365_ID = 8;
 
 const schema = z.object({
   targetOdd: z.number().min(40).max(1000),
+  scanDate: z.enum(["today", "tomorrow"]).default("today"),
+  /** Empty = all supported leagues */
+  leagueIds: z.array(z.number()).default([]),
+  /** Empty = all fixtures (no fixture filter) */
+  fixtureIds: z.array(z.number()).default([]),
+  marketCategories: z
+    .array(z.enum(["result", "goals", "halves", "handicaps", "corners", "cards", "shots", "stats", "players", "team_totals"]))
+    .default(["result", "goals", "halves", "handicaps"]),
 });
 
 /**
  * Greedy accumulator builder optimised for high-odd targets (40–1000).
- *
- * Strategy:
- * 1. Sort picks by confidence desc (most reliable first)
- * 2. Add each pick if it doesn't duplicate a fixture already in the slip
- * 3. Stop when combinedOdd >= targetOdd or picks run out
  */
 function buildGreedyAccumulator(
   picks: AnalysisPick[],
   targetOdd: number,
+  fixtureIds: number[],
 ): AccumulatorSuggestion | null {
-  // Sort: confidence desc, then by odds asc (prefer lower odds to reduce variance)
-  const sorted = [...picks].sort(
+  // If specific fixtures were selected, restrict to those
+  const candidates = fixtureIds.length
+    ? picks.filter((p) => fixtureIds.includes(p.fixtureId))
+    : picks;
+
+  if (!candidates.length) return null;
+
+  // Sort: confidence desc, then odds asc (more reliable picks first)
+  const sorted = [...candidates].sort(
     (a, b) => b.confidence - a.confidence || a.bestOdd - b.bestOdd,
   );
 
@@ -41,7 +52,7 @@ function buildGreedyAccumulator(
 
   for (const pick of sorted) {
     if (combinedOdd >= targetOdd) break;
-    if (usedFixtures.has(pick.fixtureId)) continue; // one leg per match
+    if (usedFixtures.has(pick.fixtureId)) continue;
     selected.push(pick);
     usedFixtures.add(pick.fixtureId);
     combinedOdd = parseFloat((combinedOdd * pick.bestOdd).toFixed(4));
@@ -49,9 +60,7 @@ function buildGreedyAccumulator(
 
   if (!selected.length) return null;
 
-  const avgConfidence =
-    selected.reduce((s, p) => s + p.confidence, 0) / selected.length;
-
+  const avgConfidence = selected.reduce((s, p) => s + p.confidence, 0) / selected.length;
   const legs = selected.length;
   const reached = combinedOdd >= targetOdd;
 
@@ -62,7 +71,7 @@ function buildGreedyAccumulator(
     picks: selected,
     rationale: reached
       ? `Múltipla de ${legs} pernas atingiu o alvo de ${targetOdd}× (odd real: ${combinedOdd.toFixed(1)}×). Todos os picks são exclusivamente da Bet365.`
-      : `Foram encontrados ${legs} picks da Bet365 — odd combinada: ${combinedOdd.toFixed(1)}×. Não foi possível atingir o alvo de ${targetOdd}× com os jogos disponíveis hoje.`,
+      : `Foram encontrados ${legs} picks da Bet365 — odd combinada: ${combinedOdd.toFixed(1)}×. Não foi possível atingir o alvo de ${targetOdd}× com os jogos disponíveis.`,
   };
 }
 
@@ -72,34 +81,36 @@ export async function POST(request: Request) {
   const session = getSessionFromToken(cookieStore.get(AUTH_COOKIE_NAME)?.value);
   if (!session) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
 
-  let body: { targetOdd: number };
+  let body: z.infer<typeof schema>;
   try {
     body = schema.parse(await request.json());
   } catch {
-    return NextResponse.json({ error: "targetOdd deve estar entre 40 e 1000." }, { status: 400 });
+    return NextResponse.json({ error: "Parâmetros inválidos." }, { status: 400 });
   }
 
-  const { targetOdd } = body;
+  const { targetOdd, scanDate, leagueIds, fixtureIds, marketCategories } = body;
 
-  // How many picks do we need? e.g. 1.55^n = targetOdd → n = log(targetOdd)/log(1.55)
-  // Request ~25% more than needed to account for missing Bet365 lines.
+  const dateKey = scanDate === "tomorrow" ? getTomorrowDateInSaoPaulo() : getTodayDateInSaoPaulo();
+  const leaguesForScan = leagueIds.length ? leagueIds : TOP_FOOTBALL_LEAGUES.map((l) => l.id);
+
+  // Estimate how many picks we need; request extra to handle missing Bet365 lines
   const estimatedLegs = Math.ceil(Math.log(targetOdd) / Math.log(1.52)) + 4;
-  const pickCount = Math.min(Math.max(estimatedLegs + 8, 20), 60);
+  const pickCount = Math.min(Math.max(estimatedLegs + 10, 20), 60);
 
   try {
     const result = await runFootballAnalysis(
       {
         ...DEFAULT_FILTERS,
-        scanDate: getTodayDateInSaoPaulo(),
-        horizonHours: 48,
-        // Wide odd range so we have more candidates to combine
+        scanDate: dateKey,
+        horizonHours: 36,
         minOdd: 1.3,
         maxOdd: 2.5,
         pickCount,
         reasoningEffort: "high",
         useWebSearch: false,
-        leagueIds: TOP_FOOTBALL_LEAGUES.map((l) => l.id),
-        marketCategories: ["result", "goals", "halves", "handicaps"],
+        leagueIds: leaguesForScan,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        marketCategories: marketCategories as any,
         bookmakerIds: [BET365_ID],
         includeSameGame: false,
       },
@@ -109,12 +120,12 @@ export async function POST(request: Request) {
 
     if (!result?.picks?.length) {
       return NextResponse.json(
-        { error: "Nenhum pick Bet365 encontrado para o período. Tente novamente mais tarde." },
+        { error: "Nenhum pick Bet365 encontrado para o período selecionado. Tente outras ligas ou data." },
         { status: 404 },
       );
     }
 
-    const accumulator = buildGreedyAccumulator(result.picks, targetOdd);
+    const accumulator = buildGreedyAccumulator(result.picks, targetOdd, fixtureIds);
     if (!accumulator) {
       return NextResponse.json(
         { error: "Não foi possível montar uma múltipla com os picks disponíveis." },
